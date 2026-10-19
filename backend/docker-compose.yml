@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: proctor
+      POSTGRES_PASSWORD: proctor
+      POSTGRES_DB: proctor
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U proctor"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://proctor:proctor@db:5432/proctor
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+      CORS_ORIGINS: http://localhost:5173,http://localhost:3000
+      ENABLE_AI: "true"
+      ENABLE_FACE_ID: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models
+    # CMD in the Dockerfile runs: alembic upgrade head && seed && uvicorn
+
+  frontend:
+    build: ../frontend
+    depends_on:
+      - backend
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_SOCKET_URL: http://localhost:8000
+    ports:
+      - "5173:5173"
+
+volumes:
+  pgdata:
