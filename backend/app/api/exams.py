@@ -12,6 +12,7 @@ from app.models.exam import ExamSession, Question
 from app.models.attempt import ExamAttempt
 from app.schemas.exam import ExamCreate, ExamUpdate, ExamOut, ExamJoinByCode, QuestionOut, QuestionAnswerKeyOut
 from app.schemas.attempt import AttemptOut
+from app.services.question_types import QuestionError, build_question_fields, public_config
 
 router = APIRouter(prefix="/exams", tags=["exams"])
 
@@ -32,6 +33,25 @@ def _exam_out(e: ExamSession, db: DBSession, my_attempt: "ExamAttempt | None" = 
         my_attempt_status=my_attempt.status if my_attempt else None,
         my_final_score=my_attempt.final_score if my_attempt else None,
         my_auto_score=my_attempt.auto_score if my_attempt else None,
+    )
+
+
+def _question_rows(questions) -> list[dict]:
+    rows = []
+    for i, q in enumerate(questions):
+        try:
+            row = build_question_fields(q)
+        except QuestionError as e:
+            raise HTTPException(422, f"Question {i + 1}: {e}")
+        row["order"] = i
+        rows.append(row)
+    return rows
+
+
+def _student_question(q: Question, student_seed: str) -> QuestionOut:
+    return QuestionOut(
+        id=q.id, type=q.type, text=q.text, options=q.options, marks=q.marks,
+        order=q.order, config=public_config(q, student_seed), image_url=q.image_url,
     )
 
 
@@ -56,7 +76,8 @@ def create_exam(data: ExamCreate, db: DBSession = Depends(get_db),
     if course.teacher_id != user.id and user.role != Role.admin:
         raise HTTPException(403, "Not your course")
 
-    total_marks = sum(q.marks for q in data.questions) or 100
+    rows = _question_rows(data.questions)
+    total_marks = sum(r["marks"] for r in rows) or 100
     exam = ExamSession(
         course_id=course.id, title=data.title, description=data.description,
         duration_minutes=data.duration_minutes, total_marks=total_marks,
@@ -65,9 +86,7 @@ def create_exam(data: ExamCreate, db: DBSession = Depends(get_db),
     )
     db.add(exam)
     db.flush()
-    for i, q in enumerate(data.questions):
-        db.add(Question(exam_id=exam.id, type=q.type, text=q.text, options=q.options,
-                         correct_answer=q.correct_answer, marks=q.marks, order=i))
+    db.add_all([Question(exam_id=exam.id, **r) for r in rows])
     db.commit()
     db.refresh(exam)
     return _exam_out(exam, db)
@@ -98,6 +117,7 @@ def update_exam(exam_id: int, data: ExamUpdate, db: DBSession = Depends(get_db),
     if exam.status != "draft":
         raise HTTPException(400, "Only draft exams can be edited. Published exams are locked.")
 
+    rows = _question_rows(data.questions)  
     exam.title = data.title
     exam.description = data.description
     exam.duration_minutes = data.duration_minutes
@@ -108,10 +128,8 @@ def update_exam(exam_id: int, data: ExamUpdate, db: DBSession = Depends(get_db),
     for q in list(exam.questions):
         db.delete(q)
     db.flush()
-    for i, q in enumerate(data.questions):
-        db.add(Question(exam_id=exam.id, type=q.type, text=q.text, options=q.options,
-                         correct_answer=q.correct_answer, marks=q.marks, order=i))
-    exam.total_marks = sum(q.marks for q in data.questions) or 100
+    db.add_all([Question(exam_id=exam.id, **r) for r in rows])
+    exam.total_marks = sum(r["marks"] for r in rows) or 100
 
     db.commit()
     db.refresh(exam)
@@ -140,7 +158,7 @@ def delete_exam(exam_id: int, db: DBSession = Depends(get_db),
             "submitted, or been graded on it.",
         )
 
-    db.delete(exam)  
+    db.delete(exam) 
     db.commit()
 
 
@@ -210,7 +228,7 @@ def get_questions(exam_id: int, db: DBSession = Depends(get_db), user: User = De
         )
         if not attempt or attempt.status not in ("in_progress", "submitted", "graded"):
             raise HTTPException(403, "Start the exam attempt before viewing questions")
-        return [QuestionOut.model_validate(q) for q in exam.questions]
+        return [_student_question(q, f"{user.id}") for q in exam.questions]
     if exam.course.teacher_id != user.id and user.role != Role.admin:
         raise HTTPException(403, "Not your exam")
     return [QuestionAnswerKeyOut.model_validate(q) for q in exam.questions]
@@ -240,6 +258,7 @@ def _get_or_create_attempt(exam: ExamSession, prof: Student, db: DBSession) -> E
 @router.post("/{exam_id}/start", response_model=AttemptOut)
 def start_attempt(exam_id: int, db: DBSession = Depends(get_db),
                    user: User = Depends(require_roles(Role.student))):
+
     exam = db.get(ExamSession, exam_id)
     if not exam:
         raise HTTPException(404, "Exam not found")

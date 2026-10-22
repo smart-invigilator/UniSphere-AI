@@ -1,9 +1,8 @@
 from datetime import datetime, timezone
-from urllib.parse import quote
-
+import re
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session as DBSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from app.db.session import get_db
 from app.api.deps import get_current_user, require_roles
 from app.models.user import User, Role
@@ -15,7 +14,8 @@ from app.models.alert import Alert
 from app.models.identity_log import IdentityCheckLog
 from app.schemas.attempt import (
     AttemptOut, FaceEnrollIn, FaceEnrollOut, LivenessCheckIn, LivenessCheckOut,
-    LivenessStepIn, LivenessStepOut, AnswerIn, AnswerOut, GradeAnswerIn, SubmitExamOut,
+    LivenessStepIn, LivenessStepOut, AnswerIn, AnswerOut, GradeShortAnswerIn,
+    GradeAttemptIn, SubmitExamOut,
 )
 from app.core.config import settings
 from app.ai.analyzer import analyzer
@@ -23,6 +23,8 @@ from app.ai.face_id import face_identifier
 from app.ai.utils import decode_b64_jpeg
 from app.services.risk import compute_risk
 from app.services.report import build_attempt_report
+from app.services.grading import grade_response
+from app.services.question_types import MANUAL_TYPES
 
 router = APIRouter(prefix="/attempts", tags=["attempts"])
 
@@ -31,6 +33,7 @@ DEADLINE_GRACE_SECONDS = 60
 
 
 def _attempt_deadline(a: ExamAttempt) -> "datetime | None":
+    """The authoritative server-side cutoff for this attempt."""
     if not a.started_at:
         return None
     from datetime import timedelta
@@ -143,7 +146,6 @@ def enroll_face(attempt_id: int, data: FaceEnrollIn, db: DBSession = Depends(get
     reg_embedding = student.registration_face_embedding if student else None
 
     if reg_embedding is None:
-        
         raise HTTPException(
             403,
             "No registration photo on file for your account. Contact your "
@@ -170,6 +172,8 @@ def enroll_face(attempt_id: int, data: FaceEnrollIn, db: DBSession = Depends(get
 @router.post("/{attempt_id}/checklist/liveness", response_model=LivenessCheckOut)
 def liveness_check(attempt_id: int, data: LivenessCheckIn, db: DBSession = Depends(get_db),
                     user: User = Depends(require_roles(Role.student))):
+    """Validates a genuine head-turn sequence (center -> left -> right) via
+    head-pose yaw, so a static photo held up to the camera can't pass."""
     a = _own_attempt(attempt_id, user, db)
 
     if not analyzer.ready:
@@ -273,6 +277,7 @@ def enter_exam(attempt_id: int, db: DBSession = Depends(get_db),
     return a
 
 
+
 @router.post("/{attempt_id}/answer", response_model=AnswerOut)
 def submit_answer(attempt_id: int, data: AnswerIn, db: DBSession = Depends(get_db),
                    user: User = Depends(require_roles(Role.student))):
@@ -306,18 +311,19 @@ def submit_exam(attempt_id: int, db: DBSession = Depends(get_db),
 
     ungraded = 0
     auto_score = 0.0
+    existing = {x.question_id: x for x in db.scalars(select(Answer).where(Answer.attempt_id == a.id))}
     for q in a.exam.questions:
-        ans = db.scalar(select(Answer).where(Answer.attempt_id == a.id, Answer.question_id == q.id))
+        ans = existing.get(q.id)
         if not ans:
             ans = Answer(attempt_id=a.id, question_id=q.id, response="")
             db.add(ans)
-        if q.type in ("mcq", "tf"):
-            correct = (q.correct_answer or "").strip().lower() == (ans.response or "").strip().lower()
-            ans.is_correct = correct
-            ans.marks_awarded = float(q.marks) if correct else 0.0
-            auto_score += ans.marks_awarded
-        else:
+        g = grade_response(q, ans.response)
+        if g.manual:
             ungraded += 1 
+        else:
+            ans.is_correct = g.correct          
+            ans.marks_awarded = g.marks
+            auto_score += g.marks
 
     a.auto_score = auto_score
     a.manual_score = 0.0
@@ -333,6 +339,7 @@ def submit_exam(attempt_id: int, db: DBSession = Depends(get_db),
     )
 
 
+
 @router.get("/exam/{exam_id}", response_model=list[AttemptOut])
 def list_exam_attempts(exam_id: int, db: DBSession = Depends(get_db),
                         user: User = Depends(require_roles(Role.teacher, Role.admin))):
@@ -341,13 +348,20 @@ def list_exam_attempts(exam_id: int, db: DBSession = Depends(get_db),
         raise HTTPException(404, "Exam not found")
     if exam.course.teacher_id != user.id and user.role != Role.admin:
         raise HTTPException(403, "Not your exam")
-    rows = db.scalars(select(ExamAttempt).where(ExamAttempt.exam_id == exam_id)).all()
+    rows = db.scalars(
+        select(ExamAttempt)
+        .where(ExamAttempt.exam_id == exam_id)
+        .order_by(ExamAttempt.id)
+    ).all()
     out = []
+    attempt_numbers = {}
     for a in rows:
+        attempt_numbers[a.student_id] = attempt_numbers.get(a.student_id, 0) + 1
         item = AttemptOut.model_validate(a)
         item.student_name = a.student.user.name
         item.student_code = a.student.student_id
         item.student_email = a.student.user.email
+        item.attempt_number = attempt_numbers[a.student_id]
         out.append(item)
     return out
 
@@ -404,23 +418,22 @@ def get_attempt_report(attempt_id: int, db: DBSession = Depends(get_db),
     if a.exam.course.teacher_id != user.id and user.role != Role.admin:
         raise HTTPException(403, "Forbidden")
 
-    pdf_bytes = build_attempt_report(a, db)
-    student_name = a.student.user.name.strip()
-    safe_student_name = "".join(
-        "_" if char in '<>:"/\\|?*' or ord(char) < 32 else char
-        for char in student_name
-    ).rstrip(" .") or f"student-{a.student_id}"
-    filename = f"exam-report-{safe_student_name}-attempt-{a.id}.pdf"
-    fallback_filename = f"exam-report-attempt-{a.id}.pdf"
+    attempt_number = db.scalar(
+        select(func.count())
+        .select_from(ExamAttempt)
+        .where(
+            ExamAttempt.exam_id == a.exam_id,
+            ExamAttempt.student_id == a.student_id,
+            ExamAttempt.id <= a.id,
+        )
+    )
+    pdf_bytes = build_attempt_report(a, db, attempt_number)
+    student_name = re.sub(r"[^a-z0-9]+", "-", a.student.user.name.lower()).strip("-")
+    filename = f"exam-report-{student_name or 'student'}-attempt-{attempt_number}.pdf"
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={
-            "Content-Disposition": (
-                f'attachment; filename="{fallback_filename}"; '
-                f"filename*=UTF-8''{quote(filename)}"
-            ),
-        },
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -437,44 +450,108 @@ def list_attempt_answers(attempt_id: int, db: DBSession = Depends(get_db),
                        marks_awarded=r.marks_awarded, feedback=r.feedback) for r in rows]
 
 
-@router.post("/{attempt_id}/grade/{question_id}", response_model=AnswerOut)
-def grade_answer(attempt_id: int, question_id: int, data: GradeAnswerIn,
-                 db: DBSession = Depends(get_db),
-                 user: User = Depends(require_roles(Role.teacher, Role.admin))):
+@router.post("/{attempt_id}/grade", response_model=AttemptOut)
+def grade_attempt(attempt_id: int, data: GradeAttemptIn,
+                  db: DBSession = Depends(get_db),
+                  user: User = Depends(require_roles(Role.teacher, Role.admin))):
     a = _get_attempt(attempt_id, db)
     if a.exam.course.teacher_id != user.id and user.role != Role.admin:
         raise HTTPException(403, "Not your exam")
     if a.status not in ("submitted", "graded"):
-        raise HTTPException(400, "Only submitted attempts can be graded")
-    q = db.get(Question, question_id)
-    if not q or q.exam_id != a.exam_id:
-        raise HTTPException(404, "Question not found in this exam")
+        raise HTTPException(400, "Only submitted exams can be graded")
+
+    grades = {item.question_id: item for item in data.grades}
+    question_by_id = {question.id: question for question in a.exam.questions}
+    if len(grades) != len(data.grades) or set(grades) != set(question_by_id):
+        raise HTTPException(400, "Grades must include each exam question exactly once")
+
+    answer_by_question = {
+        answer.question_id: answer
+        for answer in db.scalars(select(Answer).where(Answer.attempt_id == attempt_id)).all()
+    }
+    if set(answer_by_question) != set(question_by_id):
+        raise HTTPException(400, "Submitted answers are incomplete; cannot save grades")
+
+    for question_id, grade in grades.items():
+        question = question_by_id[question_id]
+        if grade.marks_awarded > question.marks:
+            raise HTTPException(
+                422,
+                f"Marks for question {question.order + 1} cannot exceed {question.marks}",
+            )
+
+    graded_at = datetime.now(timezone.utc)
+    for question_id, grade in grades.items():
+        answer = answer_by_question[question_id]
+        question = question_by_id[question_id]
+        is_manual = question.type in MANUAL_TYPES
+        changed = (
+            answer.marks_awarded != grade.marks_awarded
+            or answer.feedback != grade.feedback
+        )
+        answer.marks_awarded = grade.marks_awarded
+        answer.feedback = grade.feedback
+        if is_manual or changed:
+            answer.graded_by = user.id
+            answer.graded_at = graded_at
+
+    all_answers = list(answer_by_question.values())
+    auto_total = sum(
+        answer.marks_awarded
+        for answer in all_answers
+        if answer.graded_at is None
+        and question_by_id[answer.question_id].type not in MANUAL_TYPES
+    )
+    manual_total = sum(
+        answer.marks_awarded for answer in all_answers if answer.graded_at is not None
+    )
+    pending_manual = [
+        answer
+        for answer in all_answers
+        if answer.graded_at is None
+        and question_by_id[answer.question_id].type in MANUAL_TYPES
+    ]
+    a.auto_score = auto_total
+    a.manual_score = manual_total
+    if pending_manual:
+        a.final_score = None
+    else:
+        a.final_score = auto_total + manual_total
+        a.status = "graded"
+    db.commit()
+    db.refresh(a)
+    return a
+
+
+@router.post("/{attempt_id}/grade/{question_id}", response_model=AnswerOut)
+def grade_short_answer(attempt_id: int, question_id: int, data: GradeShortAnswerIn,
+                        db: DBSession = Depends(get_db),
+                        user: User = Depends(require_roles(Role.teacher, Role.admin))):
+    a = _get_attempt(attempt_id, db)
+    if a.exam.course.teacher_id != user.id and user.role != Role.admin:
+        raise HTTPException(403, "Not your exam")
     ans = db.scalar(select(Answer).where(Answer.attempt_id == attempt_id, Answer.question_id == question_id))
     if not ans:
         raise HTTPException(404, "Answer not found")
-    if data.marks_awarded > float(q.marks):
-        raise HTTPException(422, f"Marks cannot exceed the question maximum of {q.marks}.")
+    q = db.get(Question, question_id)
+    if not q or q.exam_id != a.exam_id:
+        raise HTTPException(404, "Question not found in this exam")
+    if data.marks_awarded > q.marks:
+        raise HTTPException(422, f"Marks cannot exceed {q.marks}")
     ans.marks_awarded = data.marks_awarded
     ans.feedback = data.feedback
     ans.graded_by = user.id
     ans.graded_at = datetime.now(timezone.utc)
+    db.commit()
     all_answers = db.scalars(select(Answer).where(Answer.attempt_id == attempt_id)).all()
-    short_question_ids = {exam_question.id for exam_question in a.exam.questions
-                          if exam_question.type == "short"}
-    answers_by_question = {answer.question_id: answer for answer in all_answers}
-    manual_total = sum(
-        answer.marks_awarded
-        for answer in all_answers
-        if answer.question_id in short_question_ids
-    )
-    all_graded = all(
-        question_id in answers_by_question
-        and answers_by_question[question_id].graded_at is not None
-        for question_id in short_question_ids
-    )
+    types = {x.id: x.type for x in a.exam.questions}
+    auto_total = sum(x.marks_awarded for x in all_answers if x.graded_at is None and types.get(x.question_id) not in MANUAL_TYPES)
+    manual_total = sum(x.marks_awarded for x in all_answers if x.graded_at is not None)
+    pending = [x for x in all_answers if x.graded_at is None and types.get(x.question_id) in MANUAL_TYPES]
+    a.auto_score = auto_total
     a.manual_score = manual_total
-    if all_graded:
-        a.final_score = sum(answer.marks_awarded for answer in all_answers)
+    if not pending:
+        a.final_score = auto_total + manual_total
         a.status = "graded"
     db.commit()
     db.refresh(ans)
