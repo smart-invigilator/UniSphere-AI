@@ -7,8 +7,6 @@ import {
   ShieldCheck,
   ListChecks,
   FileCheck2,
-  Plus,
-  Trash2,
   ArrowLeft,
   ArrowRight,
   Copy,
@@ -21,6 +19,15 @@ import { api } from "../../services/api";
 import { Stepper } from "../../components/common/ProgressBar";
 import Button from "../../components/common/Button";
 import Modal from "../../components/common/Modal";
+import QuestionEditor from "../../components/questions/QuestionEditor";
+import AddQuestionMenu from "../../components/questions/AddQuestionMenu";
+import {
+  blankQuestion,
+  questionFromApi,
+  questionToPayload,
+  questionIssue,
+  marksIssue,
+} from "../../utils/questionTypes";
 
 const STEPS = [
   "Course",
@@ -59,20 +66,6 @@ const SECURITY_TOGGLES = [
   },
 ];
 
-const blankQuestion = (type) => ({
-  localId: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-  type,
-  text: "",
-  marks: type === "short" ? 8 : type === "tf" ? 2 : 4,
-  options:
-    type === "mcq"
-      ? ["", "", "", ""]
-      : type === "tf"
-        ? ["True", "False"]
-        : null,
-  correctIndex: 0,
-});
-
 const blankExam = () => ({
   courseId: null,
   title: "",
@@ -89,24 +82,7 @@ const blankExam = () => ({
   },
   questions: [],
 });
-function questionFromApi(q) {
-  const options = q.type === "short" ? null : q.options || [];
-  const correctIndex =
-    q.type === "short"
-      ? 0
-      : Math.max(
-          0,
-          options.findIndex((o) => o === q.correct_answer),
-        );
-  return {
-    localId: `q-${q.id}`,
-    type: q.type,
-    text: q.text,
-    marks: q.marks,
-    options,
-    correctIndex: correctIndex < 0 ? 0 : correctIndex,
-  };
-}
+
 function toLocalDatetimeInput(iso) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -126,6 +102,7 @@ export default function CreateExam() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [result, setResult] = useState(null); 
+
   const [loadingExisting, setLoadingExisting] = useState(isEditing);
   const [loadError, setLoadError] = useState(null);
 
@@ -194,7 +171,7 @@ export default function CreateExam() {
     if (step === 1) return exam.title.trim().length > 1;
     if (step === 4)
       return (
-        exam.questions.length > 0 && exam.questions.every((q) => q.text.trim())
+        exam.questions.length > 0 && exam.questions.every((q) => !questionIssue(q))
       );
     return true;
   };
@@ -207,14 +184,7 @@ export default function CreateExam() {
     scheduled_start: exam.scheduled_start || null,
     scheduled_end: exam.scheduled_end || null,
     security: exam.security,
-    questions: exam.questions.map((q) => ({
-      type: q.type,
-      text: q.text,
-      options: q.type === "short" ? null : q.options,
-      correct_answer:
-        q.type === "short" ? null : (q.options?.[q.correctIndex] ?? null),
-      marks: Number(q.marks) || 1,
-    })),
+    questions: exam.questions.map(questionToPayload),
   });
 
   const save = async (publish) => {
@@ -275,7 +245,7 @@ export default function CreateExam() {
       </p>
 
       <div className="mt-6">
-        <Stepper steps={STEPS} current={step} />
+        <Stepper steps={STEPS} current={step} onStepClick={setStep} />
       </div>
 
       <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
@@ -415,112 +385,32 @@ export default function CreateExam() {
             <div className="space-y-3">
               {exam.questions.length === 0 && (
                 <p className="text-sm text-slate-400">
-                  No questions yet. Add one below.
+                  No questions yet. Use “Add question” below — multiple choice,
+                  math, matrix, matching, picture questions and more.
                 </p>
               )}
               {exam.questions.map((q, i) => (
-                <div
+                <QuestionEditor
                   key={q.localId}
-                  className="rounded-lg border border-slate-200 p-3 dark:border-slate-800"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-semibold uppercase tracking-wide text-brand-600">
-                      Q{i + 1} ·{" "}
-                      {q.type === "mcq"
-                        ? "Multiple Choice"
-                        : q.type === "tf"
-                          ? "True/False"
-                          : "Short Answer"}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="number"
-                        value={q.marks}
-                        onChange={(e) =>
-                          updateQuestion(q.localId, { marks: e.target.value })
-                        }
-                        className="w-14 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                      />
-                      <span className="text-[10px] text-slate-400">marks</span>
-                      <button
-                        onClick={() => removeQuestion(q.localId)}
-                        className="text-slate-400 hover:text-rose-600"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                  <input
-                    value={q.text}
-                    onChange={(e) =>
-                      updateQuestion(q.localId, { text: e.target.value })
-                    }
-                    placeholder="Question text…"
-                    className="mt-2 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm focus:border-brand-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                  />
-                  {(q.type === "mcq" || q.type === "tf") && (
-                    <div className="mt-2 space-y-1.5">
-                      <p className="text-[10px] uppercase tracking-wide text-slate-400">
-                        Select the correct answer
-                      </p>
-                      {q.options.map((opt, oi) => (
-                        <label key={oi} className="flex items-center gap-2">
-                          <input
-                            type="radio"
-                            checked={q.correctIndex === oi}
-                            onChange={() =>
-                              updateQuestion(q.localId, { correctIndex: oi })
-                            }
-                            className="h-3.5 w-3.5 text-brand-600"
-                          />
-                          {q.type === "mcq" ? (
-                            <input
-                              value={opt}
-                              onChange={(e) => {
-                                const options = [...q.options];
-                                options[oi] = e.target.value;
-                                updateQuestion(q.localId, { options });
-                              }}
-                              placeholder={`Option ${oi + 1}`}
-                              className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs focus:border-brand-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                            />
-                          ) : (
-                            <span className="text-xs text-slate-600 dark:text-slate-300">
-                              {opt}
-                            </span>
-                          )}
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                  q={q}
+                  index={i}
+                  issue={q.text.trim() || marksIssue(q.marks) ? questionIssue(q) : null}
+                  onChange={(patch) => updateQuestion(q.localId, patch)}
+                  onRemove={() => removeQuestion(q.localId)}
+                />
               ))}
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                icon={Plus}
-                onClick={() => addQuestion("mcq")}
-              >
-                Multiple Choice
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                icon={Plus}
-                onClick={() => addQuestion("tf")}
-              >
-                True/False
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                icon={Plus}
-                onClick={() => addQuestion("short")}
-              >
-                Short Answer
-              </Button>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <AddQuestionMenu onAdd={addQuestion} />
+              <span className="text-xs text-slate-400">
+                {exam.questions.length} question(s) ·{" "}
+                {exam.questions.reduce((sum, q) => sum + (Number(q.marks) || 0), 0)} marks
+              </span>
+              {exam.questions.some((q) => questionIssue(q)) && (
+                <span className="text-xs font-medium text-amber-600">
+                  {exam.questions.filter((q) => questionIssue(q)).length} question(s) need attention
+                </span>
+              )}
             </div>
           </StepShell>
         )}

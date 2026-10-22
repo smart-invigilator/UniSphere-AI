@@ -325,7 +325,11 @@ export default function PreExamCheck() {
       </header>
 
       <main className="mx-auto max-w-3xl px-4 py-8">
-        <Stepper steps={STEPS.map((s) => s.label)} current={stepIndex} />
+        <Stepper
+          steps={STEPS.map((s) => s.label)}
+          current={stepIndex}
+          onStepClick={setStepIndex}
+        />
 
         <div className="mt-8 rounded-2xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900">
           {currentKey === 'camera' && (

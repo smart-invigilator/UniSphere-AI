@@ -5,6 +5,9 @@ import { api } from '../../services/api'
 import { Badge } from '../../components/common/EmptyState'
 import Button from '../../components/common/Button'
 import Avatar from '../../components/Avatar'
+import MathText from '../../components/math/MathText'
+import AnswerView from '../../components/questions/AnswerView'
+import { isManualType, typeLabel } from '../../utils/questionTypes'
 
 const RISK_BADGE_COLOR = { low: 'emerald', medium: 'amber', high: 'rose' }
 const RISK_LABEL = { low: 'Low Risk', medium: 'Medium Risk', high: 'High Risk' }
@@ -14,12 +17,15 @@ export default function GradingPage() {
   const [exam, setExam] = useState(null)
   const [questions, setQuestions] = useState([])
   const [attempts, setAttempts] = useState([])
-  const [riskByAttempt, setRiskByAttempt] = useState({})
+  const [riskByAttempt, setRiskByAttempt] = useState({}) 
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState(null)
   const [answers, setAnswers] = useState([])
   const [drafts, setDrafts] = useState({})
+  const [loadingAnswers, setLoadingAnswers] = useState(false)
   const [saving, setSaving] = useState(null)
+  const [saveError, setSaveError] = useState(null)
+  const [saveSuccess, setSaveSuccess] = useState(null)
 
   const [loadError, setLoadError] = useState(null)
 
@@ -48,28 +54,74 @@ export default function GradingPage() {
 
   const openAttempt = async (attempt) => {
     setSelected(attempt)
-    const ans = await api.get(`/attempts/${attempt.id}/answers`)
-    setAnswers(ans)
-    const initialDrafts = {}
-    ans.forEach((a) => { initialDrafts[a.question_id] = { marks: a.marks_awarded, feedback: a.feedback } })
-    setDrafts(initialDrafts)
+    setAnswers([])
+    setDrafts({})
+    setLoadingAnswers(true)
+    setSaveError(null)
+    setSaveSuccess(null)
+    try {
+      const ans = await api.get(`/attempts/${attempt.id}/answers`)
+      setAnswers(ans)
+      const initialDrafts = {}
+      ans.forEach((a) => { initialDrafts[a.question_id] = { marks: a.marks_awarded, feedback: a.feedback } })
+      setDrafts(initialDrafts)
+    } catch (err) {
+      setSaveError(err.message || 'Could not load this student’s answers.')
+    } finally {
+      setLoadingAnswers(false)
+    }
   }
 
-  const saveGrade = async (questionId) => {
-    const d = drafts[questionId] || { marks: 0, feedback: '' }
-    const question = questions.find((item) => item.id === questionId)
-    const marks = Number(d.marks)
-    if (!question || !Number.isFinite(marks) || marks < 0 || marks > question.marks) return
+  const manualQuestions = questions.filter((q) => isManualType(q.type))
+  const autoQuestions = questions.filter((q) => !isManualType(q.type))
 
-    setSaving(questionId)
-    try {
-      await api.post(`/attempts/${selected.id}/grade/${questionId}`, {
+  const saveGrade = async () => {
+    if (!selected) return
+    setSaveError(null)
+    setSaveSuccess(null)
+    const grades = []
+    for (const q of questions) {
+      const d = drafts[q.id] || { marks: '', feedback: '' }
+      const rawMarks = String(d.marks ?? '').trim()
+      const marks = rawMarks === '' ? NaN : Number(rawMarks)
+      if (!Number.isFinite(marks) || marks < 0 || marks > q.marks) {
+        setSaveError(`Enter marks from 0 to ${q.marks} for question ${q.order + 1}.`)
+        return
+      }
+      grades.push({
+        question_id: q.id,
         marks_awarded: marks,
         feedback: d.feedback || '',
       })
+    }
+
+    setSaving(true)
+    let gradesSaved = false
+    try {
+      const updatedAttempt = await api.post(`/attempts/${selected.id}/grade`, {
+        grades,
+      })
+      gradesSaved = true
+      setSaveSuccess('Grades saved successfully.')
       const ans = await api.get(`/attempts/${selected.id}/answers`)
       setAnswers(ans)
-      await load()
+      const updatedDrafts = {}
+      ans.forEach((a) => { updatedDrafts[a.question_id] = { marks: a.marks_awarded, feedback: a.feedback } })
+      setDrafts(updatedDrafts)
+      const updatedScores = {
+        status: updatedAttempt.status,
+        auto_score: updatedAttempt.auto_score,
+        manual_score: updatedAttempt.manual_score,
+        final_score: updatedAttempt.final_score,
+      }
+      setSelected((current) => current ? { ...current, ...updatedScores } : current)
+      setAttempts((current) => current.map((attempt) =>
+        attempt.id === updatedAttempt.id ? { ...attempt, ...updatedScores } : attempt,
+      ))
+    } catch (err) {
+      setSaveError(gradesSaved
+        ? `Grades were saved, but the updated answers could not be reloaded: ${err.message || 'Refresh the page to see them.'}`
+        : err.message || 'Could not save grades.')
     } finally {
       setSaving(null)
     }
@@ -82,13 +134,13 @@ export default function GradingPage() {
     if (!selected) return
     setDownloadingReport(true)
     try {
-      const studentName = (selected.student_name || `student-${selected.student_id}`)
-        .trim()
-        .replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_')
-        .replace(/[. ]+$/g, '') || `student-${selected.student_id}`
+      const studentName = (selected.student_name || selected.student_code || 'student')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
       await api.downloadFile(
         `/attempts/${selected.id}/report`,
-        `exam-report-${studentName}-attempt-${selected.id}.pdf`,
+        `exam-report-${studentName || 'student'}-attempt-${selected.attempt_number || 1}.pdf`,
       )
     } finally {
       setDownloadingReport(false)
@@ -104,6 +156,53 @@ export default function GradingPage() {
     )
   }
 
+  const renderCard = (q, auto) => {
+    const ans = answers.find((a) => a.question_id === q.id)
+    const d = drafts[q.id] || { marks: 0, feedback: '' }
+    const markValue = String(d.marks ?? '').trim()
+    const markNumber = markValue === '' ? NaN : Number(markValue)
+    const invalidMarks = !Number.isFinite(markNumber) || markNumber < 0 || markNumber > q.marks
+    return (
+      <div key={q.id} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+        <p className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-wide text-brand-600">
+          <span>Q{q.order + 1} · {typeLabel(q.type)} · {q.marks} marks</span>
+          {auto && ans && (
+            <span className={`rounded-full px-2 py-0.5 text-[10px] ${ans.marks_awarded >= q.marks ? 'bg-emerald-100 text-emerald-700' : ans.marks_awarded > 0 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+              auto: {ans.marks_awarded}/{q.marks}
+            </span>
+          )}
+        </p>
+        <MathText as="p" text={q.text} className="mt-1 text-sm font-medium text-slate-900 dark:text-white" />
+        <div className="mt-2"><AnswerView question={q} response={ans?.response} showKey={auto} /></div>
+        <div className="mt-3 flex flex-wrap items-end gap-2">
+          <label className="text-xs">
+            <span className="mb-1 block font-semibold text-slate-600 dark:text-slate-300">Marks (/{q.marks})</span>
+            <input
+              type="number" min={0} max={q.marks} step="any" value={d.marks}
+              onChange={(e) => {
+                setSaveSuccess(null)
+                setDrafts((st) => ({ ...st, [q.id]: { ...d, marks: e.target.value } }))
+              }}
+              aria-invalid={invalidMarks}
+              className={`input w-20 ${invalidMarks ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}`}
+            />
+          </label>
+          <label className="flex-1 text-xs">
+            <span className="mb-1 block font-semibold text-slate-600 dark:text-slate-300">Feedback (optional)</span>
+            <input
+              value={d.feedback}
+              onChange={(e) => {
+                setSaveSuccess(null)
+                setDrafts((st) => ({ ...st, [q.id]: { ...d, feedback: e.target.value } }))
+              }}
+              className="input"
+            />
+          </label>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <main className="mx-auto max-w-[1200px] px-4 py-6">
       <Link to="/teacher/exams" className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-brand-600">
@@ -111,7 +210,7 @@ export default function GradingPage() {
       </Link>
       <h1 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">{exam?.title} — Grading</h1>
       <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-        Short-answer questions need manual grading. You can also adjust marks on any question, including auto-graded MCQ and True/False.
+        {manualQuestions.length} written question(s) need your marks. Every other question type is graded automatically — you can still review and override those.
       </p>
 
       <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[300px_1fr]">
@@ -130,7 +229,7 @@ export default function GradingPage() {
                   <Avatar name={a.student_name || `Student ${a.student_id}`} size="sm" />
                   <span className="min-w-0">
                     <span className="block truncate font-semibold text-slate-800 dark:text-slate-100">
-                      {a.student_name || `Attempt #${a.id}`}
+                      {a.student_name || `Student ${a.student_id}`}
                     </span>
                     <span className="block truncate font-mono text-[10px] text-slate-400">{a.student_code || `#${a.id}`}</span>
                   </span>
@@ -158,10 +257,10 @@ export default function GradingPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">
-                    {selected.student_name || `Attempt #${selected.id}`}
+                    {selected.student_name || `Student ${selected.student_id}`}
                   </p>
                   <p className="text-xs text-slate-400">
-                    {selected.student_code} {selected.student_email ? `· ${selected.student_email}` : ''} · Attempt #{selected.id}
+                    {selected.student_code} {selected.student_email ? `· ${selected.student_email}` : ''} · Attempt #{selected.attempt_number || 1}
                   </p>
                 </div>
                 <Button size="sm" variant="outline" icon={FileDown} disabled={downloadingReport} onClick={downloadReport}>
@@ -198,66 +297,33 @@ export default function GradingPage() {
                 </div>
               )}
 
-              {questions.map((q) => {
-                const ans = answers.find((a) => a.question_id === q.id)
-                const d = drafts[q.id] || { marks: 0, feedback: '' }
-                const marks = Number(d.marks)
-                const invalidMarks = d.marks === '' || !Number.isFinite(marks) || marks < 0 || marks > q.marks
-                const typeLabel = q.type === 'short'
-                  ? 'Short Answer'
-                  : q.type === 'mcq'
-                    ? 'Multiple Choice'
-                    : 'True / False'
-                return (
-                  <div key={q.id} className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-                    <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Q{q.order + 1} · {typeLabel} · {q.marks} marks</p>
-                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">{q.text}</p>
-                    <div className="mt-2 rounded-lg bg-slate-50 p-3 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                      {ans?.response || <span className="italic text-slate-400">No answer submitted</span>}
-                    </div>
-                    {q.type !== 'short' && (
-                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-                        <span>
-                          Auto-graded: {ans?.is_correct
-                            ? `Correct (${q.marks}/${q.marks} marks)`
-                            : `Incorrect (0/${q.marks} marks)`}
-                        </span>
-                        <span>Correct answer: {q.correct_answer || 'Not set'}</span>
-                      </div>
-                    )}
-                    <div className="mt-3 flex flex-wrap items-end gap-2">
-                      <label className="text-xs">
-                        <span className="mb-1 block font-semibold text-slate-600 dark:text-slate-300">Marks (/{q.marks})</span>
-                        <input
-                          type="number" min={0} max={q.marks} step="any" value={d.marks}
-                          aria-invalid={invalidMarks}
-                          onChange={(e) => setDrafts((s) => ({ ...s, [q.id]: { ...d, marks: e.target.value } }))}
-                          className={`input w-20 ${invalidMarks ? 'border-rose-500 focus:border-rose-500 focus:ring-rose-500' : ''}`}
-                        />
-                        {invalidMarks && (
-                          <span className="mt-1 block text-rose-600 dark:text-rose-400" role="alert">
-                            Enter a value from 0 to {q.marks}.
-                          </span>
-                        )}
-                      </label>
-                      <label className="flex-1 text-xs">
-                        <span className="mb-1 block font-semibold text-slate-600 dark:text-slate-300">Feedback (optional)</span>
-                        <input
-                          value={d.feedback}
-                          onChange={(e) => setDrafts((s) => ({ ...s, [q.id]: { ...d, feedback: e.target.value } }))}
-                          className="input"
-                        />
-                      </label>
-                      <Button size="sm" icon={CheckCircle2} disabled={saving === q.id || invalidMarks} onClick={() => saveGrade(q.id)}>
-                        {saving === q.id ? 'Saving…' : 'Save Grade'}
-                      </Button>
-                    </div>
-                  </div>
-                )
-              })}
-              {questions.length === 0 && (
-                <p className="text-sm text-slate-400">This exam has no questions to grade.</p>
+              {manualQuestions.map((q) => renderCard(q, false))}
+              {manualQuestions.length === 0 && (
+                <p className="text-sm text-slate-400">This exam has no written questions — grading is fully automatic.</p>
               )}
+              {autoQuestions.length > 0 && (
+                <details className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+                  <summary className="cursor-pointer text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    Auto-graded questions ({autoQuestions.length}) — review and adjust marks
+                  </summary>
+                  <div className="mt-3 space-y-3">{autoQuestions.map((q) => renderCard(q, true))}</div>
+                </details>
+              )}
+              {saveError && (
+                <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-400">
+                  {saveError}
+                </p>
+              )}
+              {saveSuccess && (
+                <p role="status" className="rounded-lg bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
+                  {saveSuccess}
+                </p>
+              )}
+              <div className="flex justify-end border-t border-slate-200 pt-4 dark:border-slate-800">
+                <Button icon={CheckCircle2} disabled={saving || loadingAnswers} onClick={saveGrade}>
+                  {loadingAnswers ? 'Loading Answers…' : saving ? 'Saving Grades…' : 'Save Grade'}
+                </Button>
+              </div>
             </div>
           )}
         </div>

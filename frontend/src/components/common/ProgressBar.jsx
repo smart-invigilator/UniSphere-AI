@@ -6,16 +6,23 @@ export function ProgressBar({ value, color = 'bg-brand-600', height = 'h-2' }) {
   )
 }
 
-export function Stepper({ steps, current }) {
+export function Stepper({ steps, current, onStepClick }) {
   return (
     <div className="flex items-center">
       {steps.map((step, i) => {
         const done = i < current
         const active = i === current
+        const canNavigate = !!onStepClick && i <= current
         return (
           <div key={step} className="flex flex-1 items-center last:flex-none">
-            <div className="flex flex-col items-center gap-1.5">
-              <div
+            <button
+              type="button"
+              onClick={canNavigate ? () => onStepClick(i) : undefined}
+              disabled={!canNavigate}
+              aria-current={active ? 'step' : undefined}
+              className={`flex flex-col items-center gap-1.5 rounded-md ${canNavigate ? 'cursor-pointer hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-900' : 'cursor-default'}`}
+            >
+              <span
                 className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors ${
                   done
                     ? 'bg-emerald-500 text-white'
@@ -25,11 +32,11 @@ export function Stepper({ steps, current }) {
                 }`}
               >
                 {done ? '✓' : i + 1}
-              </div>
+              </span>
               <span className={`hidden text-[10px] font-medium sm:block ${active ? 'text-brand-700 dark:text-brand-400' : 'text-slate-400'}`}>
                 {step}
               </span>
-            </div>
+            </button>
             {i < steps.length - 1 && (
               <div className={`mx-1.5 h-0.5 flex-1 rounded transition-colors ${done ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'}`} />
             )}

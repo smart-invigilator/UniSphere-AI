@@ -17,6 +17,7 @@ class AttemptOut(BaseModel):
     identity_verified: bool
     liveness_ok: bool
     checklist_passed: bool
+    attempt_number: int = 1
     student_name: str | None = None
     student_code: str | None = None
     student_email: str | None = None
@@ -28,7 +29,7 @@ class ChecklistStepIn(BaseModel):
 
 
 class FaceFrameIn(BaseModel):
-    image: str  
+    image: str 
 
 
 class FaceEnrollIn(BaseModel):
@@ -74,7 +75,7 @@ class IdentityCheckOut(BaseModel):
 
 class AnswerIn(BaseModel):
     question_id: int
-    response: str = ""
+    response: str = Field(default="", max_length=20000)
 
 
 class AnswerOut(BaseModel):
@@ -88,9 +89,19 @@ class AnswerOut(BaseModel):
         from_attributes = True
 
 
-class GradeAnswerIn(BaseModel):
-    marks_awarded: float = Field(ge=0)
+class GradeShortAnswerIn(BaseModel):
+    marks_awarded: float = Field(ge=0, allow_inf_nan=False)
     feedback: str = ""
+
+
+class GradeAnswerIn(BaseModel):
+    question_id: int
+    marks_awarded: float = Field(ge=0, allow_inf_nan=False)
+    feedback: str = ""
+
+
+class GradeAttemptIn(BaseModel):
+    grades: list[GradeAnswerIn] = Field(min_length=1)
 
 
 class SubmitExamOut(BaseModel):

@@ -77,7 +77,9 @@ function getErrorMessage(detail, fallback) {
 }
 
 async function request(path, { method = 'GET', body, auth = true, retry = true } = {}) {
-  const headers = { 'Content-Type': 'application/json' }
+
+  const isForm = typeof FormData !== 'undefined' && body instanceof FormData
+  const headers = isForm ? {} : { 'Content-Type': 'application/json' }
   if (auth) {
     const tokens = getTokens()
     if (tokens?.access_token) headers.Authorization = `Bearer ${tokens.access_token}`
@@ -85,7 +87,7 @@ async function request(path, { method = 'GET', body, auth = true, retry = true }
   const res = await fetch(`${API_BASE}${path}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: isForm ? body : body !== undefined ? JSON.stringify(body) : undefined,
   })
 
   if (res.status === 401 && auth && retry) {
@@ -105,6 +107,7 @@ async function request(path, { method = 'GET', body, auth = true, retry = true }
   try {
     data = await res.json()
   } catch {
+    
   }
 
   if (!res.ok) {
@@ -119,6 +122,8 @@ export const api = {
   post: (path, body) => request(path, { method: 'POST', body }),
   patch: (path, body) => request(path, { method: 'PATCH', body }),
   delete: (path) => request(path, { method: 'DELETE' }),
+  upload: (path, formData) => request(path, { method: 'POST', body: formData }),
+
   async downloadFile(path, filename) {
     const tokens = getTokens()
     const res = await fetch(`${API_BASE}${path}`, {
@@ -142,6 +147,7 @@ export const api = {
     a.remove()
     URL.revokeObjectURL(url)
   },
+
   login: (email, password) => request('/auth/login', { method: 'POST', body: { email, password }, auth: false }),
   register: (payload) => request('/auth/register', { method: 'POST', body: payload, auth: false }),
 

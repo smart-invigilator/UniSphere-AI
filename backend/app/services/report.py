@@ -22,7 +22,7 @@ def _decode_screenshot(b64: str):
         return None
 
 
-def build_attempt_report(attempt: ExamAttempt, db: DBSession) -> bytes:
+def build_attempt_report(attempt: ExamAttempt, db: DBSession, attempt_number: int) -> bytes:
     risk = compute_risk(attempt.id, db)
     alerts = db.scalars(
         select(Alert).where(Alert.attempt_id == attempt.id).order_by(Alert.timestamp.asc())
@@ -48,7 +48,7 @@ def build_attempt_report(attempt: ExamAttempt, db: DBSession) -> bytes:
     pdf.set_font("Helvetica", "", 11)
     pdf.cell(0, 6, f"Course: {exam.course.title}", ln=True)
     pdf.cell(0, 6, f"Student: {student_user.name}  ({attempt.student.student_id})", ln=True)
-    pdf.cell(0, 6, f"Attempt #{attempt.id}  -  Status: {attempt.status}", ln=True)
+    pdf.cell(0, 6, f"Attempt #{attempt_number}  -  Status: {attempt.status}", ln=True)
     if attempt.started_at:
         pdf.cell(0, 6, f"Started: {attempt.started_at.strftime('%Y-%m-%d %H:%M UTC')}", ln=True)
     if attempt.submitted_at:

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import {
   Clock, Camera, Mic, MonitorUp, ScanFace, Flag, ChevronLeft, ChevronRight,
-  Send, Maximize2,
+  AlertTriangle, X, Send, Maximize2,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useProctorSession } from '../../context/ProctorSessionContext'
@@ -12,9 +12,12 @@ import { captureFrame, waitForVideoReady } from '../../utils/media'
 import Button from '../../components/common/Button'
 import Modal from '../../components/common/Modal'
 import LiveFeed from '../../components/LiveFeed'
+import QuestionRenderer from '../../components/questions/QuestionRenderer'
+import { isAnswered, parseResponse, serializeResponse } from '../../utils/questionTypes'
 
 const WEBCAM_FPS_MS = 500
 const SCREEN_FPS_MS = 2000
+
 const CONFIDENTIAL_ALERT_TYPES = new Set([
   'Different Person Detected',
   'Face Covered',
@@ -67,14 +70,22 @@ export default function ExamPage() {
     let cancelled = false
     ;(async () => {
       try {
-        const [e, qs, a] = await Promise.all([
+        const [e, qs, a, saved] = await Promise.all([
           api.get(`/exams/${examId}`),
           api.get(`/exams/${examId}/questions`),
           api.get(`/attempts/${attemptId}`),
+          api.get(`/attempts/${attemptId}/answers`).catch(() => []),
         ])
         if (cancelled) return
         setExam(e)
         setQuestions(qs)
+        const restored = {}
+        for (const r of saved) {
+          const question = qs.find((x) => x.id === r.question_id)
+          const value = question && parseResponse(question, r.response)
+          if (question && isAnswered(question, value)) restored[question.id] = value
+        }
+        setAnswers(restored)
         if (a.status !== 'in_progress') {
           setLoadError('This attempt is not currently in progress.')
         } else if (a.started_at) {
@@ -131,6 +142,7 @@ export default function ExamPage() {
       offs.forEach((off) => off())
       studentStreamService.disconnect()
     }
+
   }, [attemptId])
 
   const showBanner = (b) => {
@@ -138,6 +150,7 @@ export default function ExamPage() {
     clearTimeout(bannerTimeout.current)
     bannerTimeout.current = setTimeout(() => setBanner(null), 6000)
   }
+
   const reportViolation = (type, label, severity = 'medium') => {
     showBanner({ text: label, severity })
     studentStreamService.reportViolation(type)
@@ -206,6 +219,7 @@ export default function ExamPage() {
       }))
     }
   }
+
   useEffect(() => {
     const onVisibility = () => {
       if (document.hidden) reportViolation('tab_switch', 'Tab switched or window minimized', 'medium')
@@ -242,6 +256,7 @@ export default function ExamPage() {
   const enterFullscreen = () => {
     document.documentElement.requestFullscreen?.().catch(() => {})
   }
+
   useEffect(() => {
     if (!('getScreenDetails' in window)) return 
     let cancelled = false
@@ -258,6 +273,7 @@ export default function ExamPage() {
     })()
     return () => { cancelled = true }
   }, [])
+
   useEffect(() => {
     if (!micStream || !connected) return
     const AudioContextClass = window.AudioContext || window.webkitAudioContext
@@ -299,10 +315,12 @@ export default function ExamPage() {
       ctx.close().catch(() => {})
     }
   }, [micStream, connected])
+
   useEffect(() => {
     cancelScheduledStop()
     return () => scheduleStopAll(300)
   }, [])
+
   useEffect(() => {
     if (camVideoRef.current) camVideoRef.current.srcObject = cameraStream || null
   }, [cameraStream, loading])
@@ -335,15 +353,21 @@ export default function ExamPage() {
   }, [connected])
 
   const q = questions[index]
-  const answeredCount = useMemo(() => Object.keys(answers).length, [answers])
+  const answeredCount = useMemo(
+    () => questions.filter((x) => isAnswered(x, answers[x.id])).length,
+    [questions, answers],
+  )
   const saveTimers = useRef({})
+  const pendingAnswers = useRef({}) 
 
   const setAnswer = (val) => {
     if (!q) return
     setAnswers((a) => ({ ...a, [q.id]: val }))
     clearTimeout(saveTimers.current[q.id])
+    pendingAnswers.current[q.id] = val
     saveTimers.current[q.id] = setTimeout(() => {
-      api.post(`/attempts/${attemptId}/answer`, { question_id: q.id, response: val }).catch((err) => {
+      delete pendingAnswers.current[q.id]
+      api.post(`/attempts/${attemptId}/answer`, { question_id: q.id, response: serializeResponse(val) }).catch((err) => {
         if (err?.status === 400 && /time is up/i.test(err?.message || '')) {
           submit()
         }
@@ -365,6 +389,11 @@ export default function ExamPage() {
     setSubmitting(true)
     setSubmitOpen(false)
     try {
+      const waiting = Object.entries(pendingAnswers.current)
+      pendingAnswers.current = {}
+      Object.values(saveTimers.current).forEach(clearTimeout)
+      await Promise.all(waiting.map(([qid, val]) =>
+        api.post(`/attempts/${attemptId}/answer`, { question_id: Number(qid), response: serializeResponse(val) }).catch(() => {})))
       const res = await api.post(`/attempts/${attemptId}/submit`)
       studentStreamService.disconnect()
       ignoreMediaEndRef.current = true
@@ -435,6 +464,15 @@ export default function ExamPage() {
         </div>
       </header>
 
+      {banner && (
+        <div className="mx-auto mt-3 max-w-[1400px] px-4">
+          <div className="flex animate-slide-in items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400">
+            <span className="flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> Warning — {banner.text}</span>
+            <button onClick={() => setBanner(null)}><X className="h-3.5 w-3.5" /></button>
+          </div>
+        </div>
+      )}
+
       {!fullscreenActive && (
         <div className="mx-auto mt-3 max-w-[1400px] px-4">
           <div className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-400">
@@ -451,7 +489,7 @@ export default function ExamPage() {
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Questions</p>
             <div className="grid grid-cols-6 gap-1.5 lg:grid-cols-4">
               {questions.map((question, i) => {
-                const state = i === index ? 'current' : answers[question.id] !== undefined ? 'answered' : marked.has(question.id) ? 'marked' : 'unanswered'
+                const state = i === index ? 'current' : isAnswered(question, answers[question.id]) ? 'answered' : marked.has(question.id) ? 'marked' : 'unanswered'
                 const styles = {
                   current: 'bg-brand-600 text-white',
                   answered: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400',
@@ -480,23 +518,7 @@ export default function ExamPage() {
               <span className="text-xs font-semibold uppercase tracking-wide text-brand-600">Question {index + 1} of {questions.length}</span>
               <span className="text-xs text-slate-400">{q.marks} marks</span>
             </div>
-            <p className="text-sm font-medium leading-relaxed text-slate-900 dark:text-white">{q.text}</p>
-
-            <div className="mt-5 space-y-2">
-              {(q.type === 'mcq' || q.type === 'tf') &&
-                (q.options || []).map((opt) => (
-                  <OptionRow key={opt} label={opt} selected={answers[q.id] === opt} onClick={() => setAnswer(opt)} />
-                ))}
-              {q.type === 'short' && (
-                <textarea
-                  rows={7}
-                  value={answers[q.id] || ''}
-                  onChange={(e) => setAnswer(e.target.value)}
-                  placeholder="Type your answer…"
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                />
-              )}
-            </div>
+            <QuestionRenderer key={q.id} q={q} value={answers[q.id]} onChange={setAnswer} />
           </div>
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-2">

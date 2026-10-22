@@ -38,7 +38,7 @@ export default function ExamSubmitted() {
 
         {ungraded > 0 && (
           <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
-            {ungraded} short-answer question{ungraded > 1 ? 's' : ''} still need manual grading by your instructor — your final score will update once that's done.
+            {ungraded} written question{ungraded > 1 ? "s" : ""} still need manual grading by your instructor — your final score will update once that's done.
           </p>
         )}
 

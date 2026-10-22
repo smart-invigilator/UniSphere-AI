@@ -1,7 +1,7 @@
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
 
-QUESTION_TYPES = {"mcq", "tf", "short"}
+from app.services.question_types import ALL_TYPES as QUESTION_TYPES
 
 
 class SecuritySettings(BaseModel):
@@ -14,10 +14,13 @@ class SecuritySettings(BaseModel):
 
 class QuestionIn(BaseModel):
     type: str
-    text: str = Field(min_length=1)
+    text: str = Field(min_length=1, max_length=5000)
     options: list[str] | None = None
     correct_answer: str | None = None
-    marks: int = 1
+    marks: int = Field(default=1, ge=1, le=1000)
+    config: dict | None = None          
+    answer_key: dict | None = None     
+    image_url: str | None = None      
 
     @field_validator("type")
     @classmethod
@@ -34,6 +37,8 @@ class QuestionOut(BaseModel):
     options: list[str] | None
     marks: int
     order: int
+    config: dict | None = None
+    image_url: str | None = None
 
     class Config:
         from_attributes = True
@@ -41,6 +46,7 @@ class QuestionOut(BaseModel):
 
 class QuestionAnswerKeyOut(QuestionOut):
     correct_answer: str | None
+    answer_key: dict | None = None
 
 
 class ExamCreate(BaseModel):
@@ -51,7 +57,7 @@ class ExamCreate(BaseModel):
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
     security: SecuritySettings = SecuritySettings()
-    questions: list[QuestionIn] = []
+    questions: list[QuestionIn] = Field(default_factory=list, max_length=300)
 
 
 class ExamUpdate(BaseModel):
@@ -61,7 +67,7 @@ class ExamUpdate(BaseModel):
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
     security: SecuritySettings = SecuritySettings()
-    questions: list[QuestionIn] = []
+    questions: list[QuestionIn] = Field(default_factory=list, max_length=300)
 
 
 class ExamOut(BaseModel):
