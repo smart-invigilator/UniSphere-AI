@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Shield, GraduationCap, ClipboardCheck, Mail, Lock } from 'lucide-react'
+import { Shield, GraduationCap, ClipboardCheck, Mail, Lock, ScanFace } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import Button from '../components/common/Button'
+import FaceScan360 from '../components/face/FaceScan360'
 
 export default function LoginPage() {
-  const { login } = useAuth()
+  const { login, finishFaceLogin } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -13,14 +14,28 @@ export default function LoginPage() {
 
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [scan, setScan] = useState(null) 
+
+  const goHome = (u) =>
+    navigate(u.role === 'teacher' || u.role === 'admin' ? '/teacher/dashboard' : '/student/dashboard')
+
+  const onScanPassed = async (tokens) => {
+    try {
+      goHome(await finishFaceLogin(tokens))
+    } catch (err) {
+      setScan(null)
+      setError(err.message || 'Login failed')
+    }
+  }
 
   const submit = async (e) => {
     e.preventDefault()
     setError('')
     setLoading(true)
     try {
-      const loggedIn = await login({ email, password })
-      navigate(loggedIn.role === 'teacher' || loggedIn.role === 'admin' ? '/teacher/dashboard' : '/student/dashboard')
+      const res = await login({ email, password })
+      if (res.requiresFaceScan) { setScan(res); return }
+      goHome(res)
     } catch (err) {
       setError(err.message || 'Login failed')
     } finally {
@@ -35,8 +50,9 @@ export default function LoginPage() {
       const creds = r === 'teacher'
         ? { email: 'teacher@proctor.io', password: 'teacher123' }
         : { email: 'student1@proctor.io', password: 'student123' }
-      const loggedIn = await login(creds)
-      navigate(loggedIn.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')
+      const res = await login(creds)
+      if (res.requiresFaceScan) { setScan(res); return }
+      goHome(res)
     } catch (err) {
       setError(err.message || 'Demo login failed')
     } finally {
@@ -55,6 +71,23 @@ export default function LoginPage() {
         </Link>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          {scan ? (
+            <>
+              <h1 className="flex items-center gap-2 text-lg font-bold text-slate-900 dark:text-white">
+                <ScanFace className="h-5 w-5 text-brand-600" /> Verify it&apos;s you
+              </h1>
+              <p className="mb-4 mt-1 text-sm text-slate-500 dark:text-slate-400">
+                Password accepted{scan.name ? `, ${scan.name}` : ''}. Complete the 360° face scan to open your dashboard.
+              </p>
+              <FaceScan360
+                purpose="login"
+                scanToken={scan.scanToken}
+                onPassed={onScanPassed}
+                onCancel={() => setScan(null)}
+              />
+            </>
+          ) : (
+          <>
           <h1 className="text-lg font-bold text-slate-900 dark:text-white">Welcome back</h1>
           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Log in to continue to your dashboard.</p>
 
@@ -107,6 +140,8 @@ export default function LoginPage() {
           <p className="mt-5 text-center text-xs text-slate-500 dark:text-slate-400">
             Don't have an account? <Link to="/register" className="font-semibold text-brand-600 hover:underline">Register</Link>
           </p>
+          </>
+          )}
         </div>
       </div>
     </div>

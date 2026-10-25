@@ -13,6 +13,7 @@ class Student(Base):
     department: Mapped[str] = mapped_column(String(120), default="")
     registration_face_embedding: Mapped[list | None] = mapped_column(JSON, nullable=True)
     registration_face_image: Mapped[str | None] = mapped_column(Text, nullable=True)
+    face_scan_templates: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     session_label: Mapped[str] = mapped_column(String(40), default="")
     attendance: Mapped[int] = mapped_column(Integer, default=100)
 

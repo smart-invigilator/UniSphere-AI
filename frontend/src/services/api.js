@@ -151,6 +151,13 @@ export const api = {
   login: (email, password) => request('/auth/login', { method: 'POST', body: { email, password }, auth: false }),
   register: (payload) => request('/auth/register', { method: 'POST', body: payload, auth: false }),
 
+  faceScanStart: (purpose, scanToken = null) =>
+    request('/auth/face-scan/start', { method: 'POST', body: { purpose, scan_token: scanToken }, auth: false }),
+  faceScanFrame: (sessionId, image) =>
+    request('/auth/face-scan/frame', { method: 'POST', body: { session_id: sessionId, image }, auth: false }),
+  faceScanComplete: (sessionId) =>
+    request('/auth/face-scan/complete', { method: 'POST', body: { session_id: sessionId }, auth: false }),
+
   getTokens,
   setTokens,
   isAuthenticated: () => !!getTokens()?.access_token,

@@ -11,6 +11,7 @@ class RegisterIn(BaseModel):
     department: str | None = None
     face_frames: list[str] | None = None
     reference_image: str | None = None
+    face_scan_ticket: str | None = None   
 
 
 class LoginIn(BaseModel):
@@ -24,6 +25,16 @@ class TokenOut(BaseModel):
     token_type: str = "bearer"
     role: Role
     name: str
+
+
+class LoginOut(BaseModel):
+    access_token: str | None = None
+    refresh_token: str | None = None
+    token_type: str = "bearer"
+    role: Role
+    name: str
+    requires_face_scan: bool = False
+    scan_token: str | None = None
 
 
 class RefreshIn(BaseModel):

@@ -12,7 +12,7 @@ from slowapi import _rate_limit_exceeded_handler
 from app.core.config import settings
 from app.db.session import Base, engine
 from app import models  
-from app.api import auth, students, alerts, analytics, courses, exams, attempts, media
+from app.api import auth, students, alerts, analytics, courses, exams, attempts, media, face_scan
 from app.realtime.socket_server import sio
 limiter = Limiter(key_func=get_remote_address, default_limits=["240/minute"])
 
@@ -29,6 +29,7 @@ app.add_middleware(
 )
 
 app.include_router(auth.router, prefix=settings.API_V1)
+app.include_router(face_scan.router, prefix=settings.API_V1)
 app.include_router(students.router, prefix=settings.API_V1)
 app.include_router(alerts.router, prefix=settings.API_V1)
 app.include_router(analytics.router, prefix=settings.API_V1)

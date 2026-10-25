@@ -39,6 +39,10 @@ def create_refresh_token(subject: str, role: str) -> str:
     )
 
 
+def create_purpose_token(subject: str, role: str, minutes: int, purpose: str) -> str:
+    return _create_token(subject, role, timedelta(minutes=minutes), purpose)
+
+
 def decode_token(token: str) -> dict[str, Any]:
     try:
         return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])

@@ -1,24 +1,19 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Shield, User, Mail, Lock, GraduationCap, ClipboardCheck, RotateCcw, Check } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import Button from '../components/common/Button'
+import FaceScan360 from '../components/face/FaceScan360'
 
 export default function RegisterPage() {
   const { register } = useAuth()
   const navigate = useNavigate()
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', role: 'student' })
-  const [referenceImage, setReferenceImage] = useState(null)
-  const [faceFrames, setFaceFrames] = useState(null)
+  const [scanTicket, setScanTicket] = useState(null) 
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
-
-  const handleCaptured = (referenceImg, extraFrames) => {
-    setReferenceImage(referenceImg)
-    setFaceFrames(extraFrames)
-  }
 
   const submit = async (e) => {
     e.preventDefault()
@@ -30,14 +25,14 @@ export default function RegisterPage() {
       setError('Password must be at least 6 characters long.')
       return
     }
-    if (form.role === 'student' && !referenceImage) {
-      setError('Please capture and confirm a face photo to complete registration.')
+    if (form.role === 'student' && !scanTicket) {
+      setError('Please complete the 360° face scan to finish registration.')
       return
     }
     setError('')
     setLoading(true)
     try {
-      const registered = await register({ ...form, referenceImage, faceFrames })
+      const registered = await register({ ...form, faceScanTicket: scanTicket })
       navigate(registered.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')
     } catch (err) {
       setError(err.message || 'Registration failed')
@@ -83,7 +78,7 @@ export default function RegisterPage() {
             <Field icon={Lock} id="password" type="password" minLength={6} label="Password" value={form.password} onChange={set('password')} placeholder="••••••••" required />
             <Field icon={Lock} id="confirm" type="password" minLength={6} label="Confirm Password" value={form.confirm} onChange={set('confirm')} placeholder="••••••••" required />
             {form.role === 'student' && (
-              <FaceCapture referenceImage={referenceImage} onCaptured={handleCaptured} onReset={() => handleCaptured(null, null)} />
+              <FaceScanField ticket={scanTicket} onPassed={(r) => setScanTicket(r.scan_ticket)} onRedo={() => setScanTicket(null)} />
             )}
             {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-400">{error}</p>}
             <Button type="submit" className="w-full" size="lg" disabled={loading}>{loading ? 'Creating…' : 'Create Account'}</Button>
@@ -112,124 +107,24 @@ function Field({ icon: Icon, id, label, type = 'text', ...props }) {
     </div>
   )
 }
-function FaceCapture({ referenceImage, onCaptured, onReset }) {
-  const [videoEl, setVideoEl] = useState(null)
-  const [stream, setStream] = useState(null)
-  const [previewImg, setPreviewImg] = useState(null)  
-  const [pendingExtras, setPendingExtras] = useState(null)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
-  const streamRef = useRef(null)
-  useEffect(() => { streamRef.current = stream }, [stream])
-  useEffect(() => {
-    return () => {
-      streamRef.current?.getTracks().forEach((t) => t.stop())
-    }
-  }, [])
-
-  const start = async () => {
-    setError('')
-    try {
-      const s = await navigator.mediaDevices.getUserMedia({ video: { width: 480, height: 360 } })
-      setStream(s)
-      if (videoEl) videoEl.srcObject = s
-    } catch {
-      setError('Camera access is required to register.')
-    }
-  }
-  const takePhoto = () => {
-    if (!videoEl) return
-    setBusy(true)
-    const frames = []
-    const canvas = document.createElement('canvas')
-    canvas.width = videoEl.videoWidth
-    canvas.height = videoEl.videoHeight
-    const ctx = canvas.getContext('2d')
-    let count = 0
-    const grab = () => {
-      ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height)
-      frames.push(canvas.toDataURL('image/jpeg', 0.9).split(',')[1])
-      count += 1
-      if (count < 3) {
-        setTimeout(grab, 250)
-      } else {
-        setBusy(false)
-        setPreviewImg(frames[0])
-        setPendingExtras(frames.slice(1))
-      }
-    }
-    grab()
-  }
-
-  const retake = () => {
-    setPreviewImg(null)
-    setPendingExtras(null)
-  }
-
-  const confirm = () => {
-    stream?.getTracks().forEach((t) => t.stop())
-    setStream(null)
-    onCaptured(previewImg, pendingExtras)
-    setPreviewImg(null)
-    setPendingExtras(null)
-  }
-
-  const changePhoto = async () => {
-    onReset()
-    await start()
-  }
-
+function FaceScanField({ ticket, onPassed, onRedo }) {
   return (
     <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-700">
       <p className="mb-2 text-xs font-medium text-slate-600 dark:text-slate-300">
-        Face photo (required — this becomes your reference photo for identity checks during exams)
+        360° face scan (required — your face from every angle becomes your identity reference for login and exams)
       </p>
-
-      {referenceImage ? (
+      {ticket ? (
         <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <img
-              src={`data:image/jpeg;base64,${referenceImage}`}
-              alt="Your confirmed reference photo"
-              className="h-16 w-16 rounded-lg object-cover"
-            />
-            <p className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-              <Check className="h-3.5 w-3.5" /> Photo confirmed
-            </p>
-          </div>
-          <Button type="button" variant="outline" className="w-full" size="sm" onClick={changePhoto}>
-            Change Photo
-          </Button>
-        </div>
-      ) : previewImg ? (
-        <div className="space-y-2">
-          <img
-            src={`data:image/jpeg;base64,${previewImg}`}
-            alt="Preview of your captured photo"
-            className="w-full rounded-lg"
-          />
-          <div className="flex gap-2">
-            <Button type="button" variant="outline" className="w-full" size="sm" icon={RotateCcw} onClick={retake}>
-              Retake
-            </Button>
-            <Button type="button" className="w-full" size="sm" icon={Check} onClick={confirm}>
-              Use This Photo
-            </Button>
-          </div>
-        </div>
-      ) : stream ? (
-        <div className="space-y-2">
-          <video ref={(el) => { setVideoEl(el); if (el) el.srcObject = stream }} autoPlay muted playsInline className="w-full rounded-lg" />
-          <Button type="button" className="w-full" size="sm" disabled={busy} onClick={takePhoto}>
-            {busy ? 'Capturing…' : 'Take Photo'}
+          <p className="flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+            <Check className="h-3.5 w-3.5" /> Face scan complete
+          </p>
+          <Button type="button" variant="outline" className="w-full" size="sm" icon={RotateCcw} onClick={onRedo}>
+            Redo scan
           </Button>
         </div>
       ) : (
-        <Button type="button" variant="outline" className="w-full" size="sm" onClick={start}>
-          Open Camera
-        </Button>
+        <FaceScan360 purpose="register" onPassed={onPassed} />
       )}
-      {error && <p className="mt-1 text-xs text-rose-600">{error}</p>}
     </div>
   )
 }

@@ -37,6 +37,9 @@ export function AuthProvider({ children }) {
     setError(null)
     try {
       const data = await api.login(email, password)
+      if (data.requires_face_scan) {
+        return { requiresFaceScan: true, scanToken: data.scan_token, name: data.name, role: data.role }
+      }
       return await applyTokens(data)
     } catch (e) {
       setError(e.message || 'Login failed')
@@ -46,7 +49,9 @@ export function AuthProvider({ children }) {
     }
   }, [])
 
-    const register = useCallback(async ({ name, email, password, role, studentId, department, faceFrames, referenceImage }) => {
+  const finishFaceLogin = useCallback(async (tokens) => applyTokens(tokens), [])
+
+  const register = useCallback(async ({ name, email, password, role, studentId, department, faceScanTicket }) => {
     setLoading(true)
     setError(null)
     try {
@@ -54,8 +59,7 @@ export function AuthProvider({ children }) {
         name, email, password, role,
         student_id: studentId || null,
         department: department || null,
-        face_frames: faceFrames || null,
-        reference_image: referenceImage || null,
+        face_scan_ticket: faceScanTicket || null,
       })
       return await applyTokens(data)
     } catch (e) {
@@ -73,7 +77,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, login, register, logout, loading, error, isAuthenticated: !!user }}
+      value={{ user, login, finishFaceLogin, register, logout, loading, error, isAuthenticated: !!user }}
     >
       {children}
     </AuthContext.Provider>
