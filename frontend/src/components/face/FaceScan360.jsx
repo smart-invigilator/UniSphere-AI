@@ -4,14 +4,17 @@ import { api } from '../../services/api'
 import { waitForVideoReady } from '../../utils/media'
 import Button from '../common/Button'
 
-const FRAME_INTERVAL_MS = 250
+const FRAME_INTERVAL_MS = 100
+const DOT_SMOOTHING_S = 0.06      
+const DOT_MAX_PREDICT_S = 0.2  
+const DOT_STALE_MS = 700          
 const SEND_WIDTH = 480
 const JPEG_QUALITY = 0.7
 const MAX_NETWORK_RETRIES = 4
 
 const C = 160
 const R = 142
-const HALF = 17 
+const HALF = 17
 const polar = (deg, r = R) => {
   const a = (deg * Math.PI) / 180
   return [C + r * Math.cos(a), C - r * Math.sin(a)]
@@ -30,12 +33,14 @@ function sleep(ms) {
 
 export default function FaceScan360({ purpose, scanToken = null, onPassed, onCancel = null }) {
   const [phase, setPhase] = useState('idle') 
-  const [state, setState] = useState(null) 
+  const [state, setState] = useState(null)  
   const [message, setMessage] = useState('')
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const canvasRef = useRef(null)
   const runRef = useRef(0)                 
+  const dotRef = useRef(null)              
+  const poseRef = useRef({ has: false, x: 0, y: 0, vx: 0, vy: 0, t: 0 })
 
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop())
@@ -48,6 +53,20 @@ export default function FaceScan360({ purpose, scanToken = null, onPassed, onCan
     stopCamera()
   }, [stopCamera])
 
+  const feedPose = (pose) => {
+    const now = performance.now()
+    const p = poseRef.current
+    if (!pose) { p.has = false; return }
+    if (p.has) {
+      const dt = (now - p.t) / 1000
+      if (dt > 0.02 && dt < 0.5) {
+        p.vx = 0.5 * p.vx + 0.5 * ((pose.x - p.x) / dt)
+        p.vy = 0.5 * p.vy + 0.5 * ((pose.y - p.y) / dt)
+      } else { p.vx = 0; p.vy = 0 }
+    } else { p.vx = 0; p.vy = 0 }
+    p.x = pose.x; p.y = pose.y; p.t = now; p.has = true
+  }
+
   const grabFrame = () => {
     const v = videoRef.current
     if (!v || !v.videoWidth) return null
@@ -55,7 +74,7 @@ export default function FaceScan360({ purpose, scanToken = null, onPassed, onCan
     canvas.width = SEND_WIDTH
     canvas.height = Math.round((SEND_WIDTH * v.videoHeight) / v.videoWidth)
     canvas.getContext('2d').drawImage(v, 0, 0, canvas.width, canvas.height)
-    return canvas.toDataURL('image/jpeg', JPEG_QUALITY)
+    return canvas.toDataURL('image/jpeg', JPEG_QUALITY) 
   }
 
   const fail = (text, nextPhase = 'error') => {
@@ -97,6 +116,7 @@ export default function FaceScan360({ purpose, scanToken = null, onPassed, onCan
       return
     }
     if (runRef.current !== myRun) return
+    poseRef.current.has = false
     setState(session.frame)
     setPhase('scanning')
 
@@ -110,6 +130,7 @@ export default function FaceScan360({ purpose, scanToken = null, onPassed, onCan
           last = await api.faceScanFrame(session.session_id, image)
           retries = 0
           if (runRef.current !== myRun) return
+          feedPose(last.pose)
           setState(last)
           if (last.status !== 'running') break
         } catch (e) {
@@ -148,6 +169,41 @@ export default function FaceScan360({ purpose, scanToken = null, onPassed, onCan
     onCancel?.()
   }
 
+  const camOn = phase === 'starting' || phase === 'scanning' || phase === 'finishing'
+  useEffect(() => {
+    if (!camOn) return undefined
+    let raf = 0
+    let last = performance.now()
+    const shown = { x: 0, y: 0, init: false }
+    const tick = () => {
+      const now = performance.now()         
+      const dot = dotRef.current
+      const p = poseRef.current
+      if (dot && p.has) {
+        const ahead = Math.max(0, Math.min((now - p.t) / 1000, DOT_MAX_PREDICT_S))
+        const tx = p.x + p.vx * ahead
+        const ty = p.y + p.vy * ahead
+        if (!shown.init) { shown.x = tx; shown.y = ty; shown.init = true }
+        const dt = Math.max(0, Math.min((now - last) / 1000, 0.1))
+        const a = 1 - Math.exp(-dt / DOT_SMOOTHING_S)     
+        shown.x += (tx - shown.x) * a
+        shown.y += (ty - shown.y) * a
+        const mag = Math.hypot(shown.x, shown.y)
+        const k = mag > 1.15 ? 1.15 / mag : 1
+        dot.setAttribute('cx', (C + shown.x * k * R).toFixed(1))
+        dot.setAttribute('cy', (C - shown.y * k * R).toFixed(1))
+        dot.style.opacity = now - p.t > DOT_STALE_MS ? '0.3' : '1'
+      } else if (dot) {
+        dot.style.opacity = '0'
+        shown.init = false
+      }
+      last = now
+      raf = requestAnimationFrame(tick)
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [camOn])
+
   const steps = state?.steps || []
   const total = Math.max(steps.length, 1)
   const stepIndex = state?.step_index || 0
@@ -157,14 +213,6 @@ export default function FaceScan360({ purpose, scanToken = null, onPassed, onCan
   const target = state?.target_sector
   const problem = state && PROBLEM_CODES.has(state.code) || state?.code?.startsWith('restart_')
   const multi = (state?.face_count || 0) > 1
-  const camOn = phase === 'starting' || phase === 'scanning' || phase === 'finishing'
-
-  const pose = state?.pose
-  const dot = pose ? (() => {
-    const mag = Math.hypot(pose.x, pose.y)
-    const k = mag > 1.15 ? 1.15 / mag : 1
-    return [C + pose.x * k * R, C - pose.y * k * R]
-  })() : null
 
   if (phase === 'idle' || phase === 'failed' || phase === 'error') {
     return (
@@ -208,7 +256,7 @@ export default function FaceScan360({ purpose, scanToken = null, onPassed, onCan
             const cls = isDone ? 'stroke-emerald-500' : isTarget ? 'stroke-brand-500 animate-pulse' : 'stroke-slate-300 dark:stroke-slate-700'
             return <path key={k} d={arcPath(k)} fill="none" strokeWidth={isTarget ? 16 : 12} strokeLinecap="round" className={cls} />
           })}
-          {dot && <circle cx={dot[0]} cy={dot[1]} r="7" className="fill-white stroke-brand-600" strokeWidth="3" style={{ transition: 'cx 200ms, cy 200ms' }} />}
+          <circle ref={dotRef} cx={C} cy={C} r="7" className="fill-white stroke-brand-600" strokeWidth="3" style={{ opacity: 0 }} />
         </svg>
         {phase === 'finishing' && (
           <div className="absolute inset-0 flex items-center justify-center">

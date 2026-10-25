@@ -19,12 +19,6 @@ import { isAnswered, parseResponse, serializeResponse } from '../../utils/questi
 const WEBCAM_FPS_MS = 500
 const SCREEN_FPS_MS = 2000
 
-const CONFIDENTIAL_ALERT_TYPES = new Set([
-  'Different Person Detected',
-  'Face Covered',
-  'Face Obstructed',
-])
-
 export default function ExamPage() {
   const { examId } = useParams()
   const { user } = useAuth()
@@ -121,15 +115,19 @@ export default function ExamPage() {
       if (mounted && res?.ok) {
         myStudentIdRef.current = res.studentId
         setMyStudentId(res.studentId)
+        if (res.identity) {
+          setIdentity(res.identity)
+          setIdentityNeedsRecovery(['mismatch', 'unavailable'].includes(res.identity.status))
+        }
       }
     })
 
     const offs = [
       studentStreamService.on('connected', (v) => setConnected(v)),
-      studentStreamService.on('alert', (payload) => {
-        if (!payload?.student || payload.student.id !== myStudentIdRef.current) return
-        if (CONFIDENTIAL_ALERT_TYPES.has(payload.alert.type)) return
-        showBanner({ text: payload.alert.type, severity: payload.alert.severity })
+      studentStreamService.on('identity:status', (nextIdentity) => {
+        if (!nextIdentity) return
+        setIdentity(nextIdentity)
+        setIdentityNeedsRecovery(['mismatch', 'unavailable'].includes(nextIdentity.status))
       }),
       studentStreamService.on('students:tick', (list) => {
         const mine = list.find((s) => s.id === myStudentIdRef.current)

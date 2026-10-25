@@ -15,7 +15,7 @@ EDGE_MARGIN = 0.0
 
 EXTRA_TILE_FRAC = 0.5
 EXTRA_TILE_STRIDE = 0.25
-EXTRA_MIN_SCORE = 0.6
+EXTRA_MIN_SCORE = 0.75
 EXTRA_MAIN_OVERLAP = 0.25 
 
 def _extra_faces(frame_bgr, main_box) -> int:

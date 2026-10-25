@@ -67,7 +67,7 @@ class ScanConfig:
     step_timeout_s: float = 35.0
     min_total_time_s: float = 3.0
     min_frame_interval_s: float = 0.08
-    max_frames: int = 700
+    max_frames: int = 1500
     debug: bool = False
 
     @classmethod
@@ -90,13 +90,13 @@ class ScanConfig:
 
 @dataclass
 class Observation:
-    t: float                           
-    face_count: int                     
+    t: float                         
+    face_count: int                 
     yaw: float | None = None          
-    pitch: float | None = None       
-    embedding: Any = None                
-    quality_reason: str = ""             
-    jpeg_b64: str | None = None        
+    pitch: float | None = None          
+    embedding: Any = None              
+    quality_reason: str = ""           
+    jpeg_b64: str | None = None       
     sharpness: float = 0.0
 
 
@@ -129,7 +129,7 @@ def _angdiff(a: float, b: float) -> float:
 @dataclass
 class Step:
     key: str
-    kind: str              
+    kind: str               
     sector: int | None
     label: str
     hold: int
@@ -159,7 +159,7 @@ class FaceScanSession:
             raise ValueError("upgrade mode needs a reference embedding")
 
         self.t0 = now if now is not None else time.monotonic()
-        self.phase = "running"           
+        self.phase = "running"         
         self.fail_reason = ""
         self.fail_message = ""
         self.restarts = 0
@@ -261,7 +261,6 @@ class FaceScanSession:
         return res
 
     def snapshot(self, code: str = "ready", message: str = "Look at the camera to begin.") -> dict:
-        """Current state without feeding a frame (used when a session is created)."""
         return self._public(code, message)
 
 
@@ -455,7 +454,7 @@ class FaceScanSession:
 @dataclass
 class ScanRecord:
     id: str
-    purpose: str           
+    purpose: str               
     engine: FaceScanSession
     user_id: int | None = None
     created: float = field(default_factory=time.monotonic)
@@ -519,6 +518,7 @@ class ScanStore:
             self._failures.setdefault(user_id, []).append(now)
 
     def locked_for(self, user_id: int, max_failures: int, window_s: float) -> float:
+        """Seconds the account is still locked (0 = not locked)."""
         now = time.monotonic()
         with self._lock:
             hits = [t for t in self._failures.get(user_id, []) if now - t < window_s]

@@ -42,7 +42,7 @@ FACE_OCCLUSION_ALERT_COOLDOWN_SECONDS = 20.0
 
 
 def _room(exam_id) -> str:
-    return f"exam:{exam_id}"
+    return f"exam:{exam_id}:dashboard"
 
 
 @sio.event
@@ -118,12 +118,16 @@ async def student_join(sid, data):
             reference_embedding=attempt.reference_embedding,
         )
         manager.connect(attempt.id, sid)
-        await sio.enter_room(sid, _room(attempt.exam_id))
     finally:
         db.close()
 
     await sio.emit("students:tick", manager.snapshot(live.exam_id), room=_room(live.exam_id))
-    return {"ok": True, "studentId": live.student_id, "examId": live.exam_id}
+    return {
+        "ok": True,
+        "studentId": live.student_id,
+        "examId": live.exam_id,
+        "identity": live.to_dict()["identity"],
+    }
 
 
 @sio.on("heartbeat")
@@ -288,6 +292,8 @@ async def frame_webcam(sid, data):
                 and metrics.get("faces", 1) <= 1 and not metrics.get("objects")):
             s.status = "normal"
 
+    if s.sid:
+        await sio.emit("identity:status", s.to_dict()["identity"], to=s.sid)
     await sio.emit("students:tick", manager.snapshot(s.exam_id), room=_room(s.exam_id))
 
 
