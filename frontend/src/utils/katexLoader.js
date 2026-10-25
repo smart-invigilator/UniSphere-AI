@@ -12,4 +12,4 @@ export function loadKatex() {
       .catch((err) => { pending = null; throw err })
   }
   return pending
-}cl
+}

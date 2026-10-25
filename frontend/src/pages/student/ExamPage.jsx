@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import {
   Clock, Camera, Mic, MonitorUp, ScanFace, Flag, ChevronLeft, ChevronRight,
-  AlertTriangle, X, Send, Maximize2,
+  AlertTriangle, X, Send, Maximize2, Calculator as CalculatorIcon,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useProctorSession } from '../../context/ProctorSessionContext'
@@ -13,6 +13,7 @@ import Button from '../../components/common/Button'
 import Modal from '../../components/common/Modal'
 import LiveFeed from '../../components/LiveFeed'
 import QuestionRenderer from '../../components/questions/QuestionRenderer'
+import ScientificCalculator from '../../components/student/ScientificCalculator'
 import { isAnswered, parseResponse, serializeResponse } from '../../utils/questionTypes'
 
 const WEBCAM_FPS_MS = 500
@@ -47,6 +48,7 @@ export default function ExamPage() {
   const [submitOpen, setSubmitOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [banner, setBanner] = useState(null)
+  const [calcOpen, setCalcOpen] = useState(false)
   const bannerTimeout = useRef(null)
 
   const [myStudentId, setMyStudentId] = useState(null)
@@ -450,6 +452,15 @@ export default function ExamPage() {
             <p className="text-xs text-slate-400">{user?.name} · {user?.studentId}</p>
           </div>
           <div className="flex items-center gap-4">
+            <Button
+              size="sm"
+              variant={calcOpen ? 'danger' : 'outline'}
+              icon={calcOpen ? X : CalculatorIcon}
+              onClick={() => setCalcOpen((open) => !open)}
+              aria-pressed={calcOpen}
+            >
+              {calcOpen ? 'Close Calculator' : 'Open Calculator'}
+            </Button>
             <span className={`inline-flex items-center gap-1.5 text-xs font-semibold ${connected ? 'text-emerald-600' : 'text-amber-600'}`}>
               <span className={`h-2 w-2 animate-pulse rounded-full ${connected ? 'bg-emerald-500' : 'bg-amber-500'}`} />
               {connected ? 'Secure Session Active' : 'Connecting…'}
@@ -600,6 +611,8 @@ export default function ExamPage() {
           </div>
         </div>
       </Modal>
+
+      <ScientificCalculator open={calcOpen} onClose={() => setCalcOpen(false)} />
     </div>
   )
 }
