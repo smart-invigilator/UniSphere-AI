@@ -1,3 +1,12 @@
+running instructions:
+1. by entering the backend folder first download requirements then enable virtual environment then run: "alembic upgrade head"
+2. after that run the server by running "uvicorn main:socket_app --reload"
+3. after that run the frontend by "npm run dev"
+4. 
+   
+
+
+
 # Proctor — Course/Exam AI Proctoring System
 
 A complete, runnable proctoring platform: teachers create courses and exam
