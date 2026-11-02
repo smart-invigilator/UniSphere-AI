@@ -5,4 +5,5 @@ __pycache__/
 .env
 models/*.onnx
 media/
+*.pt
 yolov8s.pt
