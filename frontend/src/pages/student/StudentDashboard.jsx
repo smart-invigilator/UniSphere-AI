@@ -156,7 +156,21 @@ export default function StudentDashboard() {
         ) : (
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {visible.map((exam) => (
-              <div key={exam.id} className="flex flex-col rounded-xl border border-slate-200 bg-white p-4 transition-shadow hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
+              <div
+                key={exam.id}
+                role={exam.studentStatus === 'completed' && exam.my_attempt_id ? 'button' : undefined}
+                tabIndex={exam.studentStatus === 'completed' && exam.my_attempt_id ? 0 : undefined}
+                onClick={() => exam.studentStatus === 'completed' && exam.my_attempt_id && navigate(`/student/exam-results/${exam.my_attempt_id}`)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    if (exam.studentStatus === 'completed' && exam.my_attempt_id) navigate(`/student/exam-results/${exam.my_attempt_id}`)
+                  }
+                }}
+                className={`flex flex-col rounded-xl border border-slate-200 bg-white p-4 transition-shadow hover:shadow-md dark:border-slate-800 dark:bg-slate-900 ${
+                  exam.studentStatus === 'completed' && exam.my_attempt_id ? 'cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500/40' : ''
+                }`}
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">{exam.title}</p>
@@ -179,6 +193,7 @@ export default function StudentDashboard() {
                 ) : (
                   <div className="rounded-lg bg-slate-50 px-3 py-2 text-center text-xs dark:bg-slate-800">
                     <ScoreSummary exam={exam} />
+                    {exam.my_attempt_id && <p className="mt-1 text-[11px] font-medium text-brand-600 dark:text-brand-400">Click to view details</p>}
                   </div>
                 )}
               </div>

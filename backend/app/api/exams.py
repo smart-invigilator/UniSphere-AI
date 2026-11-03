@@ -32,6 +32,7 @@ def _exam_out(e: ExamSession, db: DBSession, my_attempt: "ExamAttempt | None" = 
         total_marks=e.total_marks, scheduled_start=e.scheduled_start, scheduled_end=e.scheduled_end,
         status=e.status, is_closed=is_closed, security=e.security, question_count=qcount,
         created_at=e.created_at,
+        my_attempt_id=my_attempt.id if my_attempt else None,
         my_attempt_status=my_attempt.status if my_attempt else None,
         my_final_score=my_attempt.final_score if my_attempt else None,
         my_auto_score=my_attempt.auto_score if my_attempt else None,

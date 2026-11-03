@@ -20,6 +20,7 @@ import StudentDashboard from './pages/student/StudentDashboard'
 import PreExamCheck from './pages/student/PreExamCheck'
 import ExamPage from './pages/student/ExamPage'
 import ExamSubmitted from './pages/student/ExamSubmitted'
+import StudentExamResults from './pages/student/StudentExamResults'
 
 import TeacherDashboard from './pages/teacher/TeacherDashboard'
 import ExamsPage from './pages/teacher/ExamsPage'
@@ -68,6 +69,7 @@ export default function App() {
                 <Route path="/student/checklist/:examId" element={<ProtectedRoute role="student"><PreExamCheck /></ProtectedRoute>} />
                 <Route path="/student/exam/:examId" element={<ProtectedRoute role="student"><ExamPage /></ProtectedRoute>} />
                 <Route path="/student/exam-submitted" element={<ProtectedRoute role="student"><ExamSubmitted /></ProtectedRoute>} />
+                <Route path="/student/exam-results/:attemptId" element={<ProtectedRoute role="student"><AppNavbar /><StudentExamResults /></ProtectedRoute>} />
 
                 {/* Teacher flow (sidebar layout) */}
                 <Route element={<ProtectedRoute role="teacher"><DashboardLayout items={TEACHER_NAV} /></ProtectedRoute>}>

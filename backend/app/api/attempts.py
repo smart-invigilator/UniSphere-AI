@@ -16,6 +16,7 @@ from app.schemas.attempt import (
     AttemptOut, FaceEnrollIn, FaceEnrollOut, LivenessCheckIn, LivenessCheckOut,
     LivenessStepIn, LivenessStepOut, AnswerIn, AnswerOut, GradeShortAnswerIn, SubmitExamOut,
 )
+from app.schemas.exam import QuestionAnswerKeyOut
 from app.core.config import settings
 from app.ai.analyzer import analyzer
 from app.ai.face_id import face_identifier
@@ -511,6 +512,26 @@ def list_attempt_answers(attempt_id: int, db: DBSession = Depends(get_db),
         raise HTTPException(403, "Forbidden")
     rows = db.scalars(select(Answer).where(Answer.attempt_id == attempt_id)).all()
     return [_answer_out(r) for r in rows]
+
+
+@router.get("/{attempt_id}/questions", response_model=list[QuestionAnswerKeyOut])
+def list_submitted_questions(attempt_id: int, db: DBSession = Depends(get_db),
+                             user: User = Depends(get_current_user)):
+    a = _get_attempt(attempt_id, db)
+    if user.role == Role.student:
+        _own_attempt(attempt_id, user, db)
+    elif a.exam.course.teacher_id != user.id and user.role != Role.admin:
+        raise HTTPException(403, "Forbidden")
+    if a.status not in ("submitted", "graded"):
+        raise HTTPException(403, "Question answer keys are available after submission")
+    return [
+        QuestionAnswerKeyOut(
+            id=q.id, type=q.type, text=q.text, options=q.options, marks=q.marks,
+            order=q.order, media=q.media or [], settings=q.settings or {},
+            correct_answer=q.correct_answer, answer_key=q.answer_key,
+        )
+        for q in a.exam.questions
+    ]
 
 
 @router.post("/{attempt_id}/grade/{question_id}", response_model=AnswerOut)

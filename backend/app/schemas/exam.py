@@ -120,6 +120,7 @@ class ExamOut(BaseModel):
     security: dict
     question_count: int = 0
     created_at: datetime
+    my_attempt_id: int | None = None
     my_attempt_status: str | None = None
     my_final_score: float | None = None
     my_auto_score: float | None = None
