@@ -7,13 +7,13 @@ import { nodeViews } from './nodeViews'
 import { COMPONENTS, parseAnswer } from './schema'
 import './editor.css'
 
-function ReadOnlyDocument({ doc }) {
+function ReadOnlyDocument({ doc, ariaLabel }) {
   const extensions = useMemo(() => createAnswerExtensions({ allowed: COMPONENTS, views: nodeViews, guard: false }), [])
-  const editor = useEditor({ extensions, content: doc, editable: false, editorProps: { attributes: { class: 'ae-prose', 'aria-readonly': 'true', 'aria-label': 'Submitted answer' } } }, [doc])
+  const editor = useEditor({ extensions, content: doc, editable: false, editorProps: { attributes: { class: 'ae-prose', 'aria-readonly': 'true', 'aria-label': ariaLabel } } }, [doc])
   return <EditorContent editor={editor} className="ae-content" />
 }
 
-export default function AnswerDocumentView({ response, emptyText = 'No answer submitted' }) {
+export default function AnswerDocumentView({ response, emptyText = 'No answer submitted', ariaLabel = 'Submitted answer', testId = 'answer-view' }) {
   const parsed = useMemo(() => parseAnswer(response), [response])
   if (!response) return <span className="italic text-slate-400">{emptyText}</span>
   if (parsed.error) {
@@ -26,8 +26,8 @@ export default function AnswerDocumentView({ response, emptyText = 'No answer su
   }
   if (parsed.legacyText !== null) return <MathText text={parsed.legacyText} />
   return (
-    <div className="ae-shell ae-readonly" data-testid="answer-view">
-      <ReadOnlyDocument doc={parsed.doc} />
+    <div className="ae-shell ae-readonly" data-testid={testId}>
+      <ReadOnlyDocument doc={parsed.doc} ariaLabel={ariaLabel} />
     </div>
   )
 }

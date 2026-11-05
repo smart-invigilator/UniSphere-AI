@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 from pydantic import BaseModel, Field, field_validator, model_validator
 from app.services.question_types import QUESTION_TYPES, normalize_question
@@ -93,6 +93,21 @@ class ExamCreate(BaseModel):
     security: SecuritySettings = SecuritySettings()
     questions: list[QuestionIn] = Field(default_factory=list, max_length=500)
 
+    @field_validator("scheduled_start", "scheduled_end")
+    @classmethod
+    def _assume_utc(cls, v):
+        if v is None:
+            return v
+        if v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v.astimezone(timezone.utc)
+
+    @model_validator(mode="after")
+    def _check_schedule(self):
+        if self.scheduled_start and self.scheduled_end and self.scheduled_end <= self.scheduled_start:
+            raise ValueError("The closing time must be after the opening time")
+        return self
+
 
 class ExamUpdate(BaseModel):
     title: str = Field(min_length=2, max_length=160)
@@ -101,7 +116,22 @@ class ExamUpdate(BaseModel):
     scheduled_start: datetime | None = None
     scheduled_end: datetime | None = None
     security: SecuritySettings = SecuritySettings()
-    questions: list[QuestionIn] = Field(default_factory=list, max_length=500)
+    questions: list[QuestionIn] | None = Field(default=None, max_length=500)
+
+    @field_validator("scheduled_start", "scheduled_end")
+    @classmethod
+    def _assume_utc(cls, v):
+        if v is None:
+            return v
+        if v.tzinfo is None:
+            return v.replace(tzinfo=timezone.utc)
+        return v.astimezone(timezone.utc)
+
+    @model_validator(mode="after")
+    def _check_schedule(self):
+        if self.scheduled_start and self.scheduled_end and self.scheduled_end <= self.scheduled_start:
+            raise ValueError("The closing time must be after the opening time")
+        return self
 
 
 class ExamOut(BaseModel):
@@ -126,6 +156,7 @@ class ExamOut(BaseModel):
     my_auto_score: float | None = None
     my_manual_score: float | None = None
     my_pending_grading: int = 0
+    has_attempts: bool = False
 
     class Config:
         from_attributes = True

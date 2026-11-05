@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, FileText, Loader2, MapPin, Paperclip, Trash2, Check
 import MathText from '../math/MathText'
 import MathInput from '../math/MathInput'
 import UnifiedAnswerEditor from '../answer-editor/UnifiedAnswerEditor'
+import AnswerDocumentView from '../answer-editor/AnswerDocumentView'
 import { QuestionMediaView } from './QuestionMedia'
 import { api } from '../../services/api'
 
@@ -368,6 +369,11 @@ export default function QuestionRenderer({ question: q, value, onChange, attempt
         <MathText text={q.text} className="text-sm font-medium leading-relaxed text-slate-900 dark:text-white" />
       )}
       <QuestionMediaView media={q.type === 'hotspot' ? (q.media || []).slice(1) : q.media} />
+      {s.rich_content && (
+        <div data-testid="question-content-view">
+          <AnswerDocumentView response={s.rich_content} ariaLabel="Question content" testId="question-content-doc" />
+        </div>
+      )}
       {body && <div className="space-y-2">{body}</div>}
     </div>
   )

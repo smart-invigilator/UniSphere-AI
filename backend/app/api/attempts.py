@@ -271,7 +271,7 @@ def enter_exam(attempt_id: int, db: DBSession = Depends(get_db),
         raise HTTPException(400, "Liveness check not completed")
 
     if a.status not in ("in_progress",):
-        if exam.scheduled_end and datetime.now(timezone.utc) > exam.scheduled_end:
+        if exam.scheduled_end and datetime.now(timezone.utc) > (exam.scheduled_end if exam.scheduled_end.tzinfo else exam.scheduled_end.replace(tzinfo=timezone.utc)):
             raise HTTPException(400, "This exam's submission window has closed.")
         a.status = "in_progress"
         a.started_at = datetime.now(timezone.utc)
@@ -552,7 +552,12 @@ def grade_short_answer(attempt_id: int, question_id: int, data: GradeShortAnswer
     if not ans:
         ans = Answer(attempt_id=a.id, question_id=q.id, response="", requires_manual=True)
         db.add(ans)
-    awarded = round(min(float(data.marks_awarded), float(q.marks)), 2)
+    if data.marks_awarded > float(q.marks) + 1e-9:
+        raise HTTPException(
+            400,
+            f"Marks cannot be more than this question's total of {q.marks}.",
+        )
+    awarded = round(float(data.marks_awarded), 2)
     ans.marks_awarded = awarded
     ans.feedback = data.feedback
     ans.graded_by = user.id

@@ -1,15 +1,18 @@
 import { useCallback, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Shield, GraduationCap, ClipboardCheck, Mail, Lock, ArrowLeft } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import Button from '../components/common/Button'
 import FaceScan360 from '../components/face/FaceScan360'
 
 const homeFor = (role) => (role === 'teacher' || role === 'admin' ? '/teacher/dashboard' : '/student/dashboard')
+const safeReturnPath = (from) => (typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : null)
 
 export default function LoginPage() {
   const { login, completeFaceLogin } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  const returnTo = safeReturnPath(location.state?.from)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [remember, setRemember] = useState(true)
@@ -26,7 +29,7 @@ export default function LoginPage() {
       setScanKey((k) => k + 1)
       return
     }
-    navigate(homeFor(result.role))
+    navigate(returnTo || homeFor(result.role))
   }
 
   const submit = async (e) => {
@@ -63,7 +66,7 @@ export default function LoginPage() {
     setVerifying(true)
     try {
       const user = await completeFaceLogin({ faceToken: challenge.faceToken, faceScan: frames })
-      navigate(homeFor(user.role))
+      navigate(returnTo || homeFor(user.role))
     } catch (err) {
       if (err?.status === 401) {
         setChallenge(null)

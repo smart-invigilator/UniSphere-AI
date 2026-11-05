@@ -10,7 +10,7 @@ import { api, ApiError } from '../../services/api'
 import { Stepper, ProgressBar } from '../../components/common/ProgressBar'
 import Button from '../../components/common/Button'
 import LiveFeed from '../../components/LiveFeed'
-import { captureFrame, waitForVideoReady } from '../../utils/media'
+import { captureFrame, waitForVideoReady, requestEntireScreen, ScreenShareError } from '../../utils/media'
 
 const ALL_STEPS = [
   { key: 'camera', label: 'Camera', icon: Camera, securityKey: 'camera' },
@@ -142,25 +142,18 @@ export default function PreExamCheck() {
     setKeyStatus('screenShare', 'checking')
     setKeyError('screenShare', null)
     try {
-      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true })
-      const track = stream.getVideoTracks()[0]
-      // Real verification: getSettings().displaySurface tells us whether
-      // the student shared their entire screen ('monitor') vs. just one
-      // window or browser tab. Not all browsers report this yet (notably
-      // Firefox) — when it's genuinely unsupported (undefined), we can't
-      // verify either way, so we fail open rather than blocking students
-      // on browsers that can't tell us. When the browser DOES report it
-      // and it's not 'monitor', that's a real, confident rejection.
-      const displaySurface = track?.getSettings?.().displaySurface
-      if (displaySurface && displaySurface !== 'monitor') {
-        track.stop()
-        setKeyStatus('screenShare', 'failed')
-        setKeyError(
-          'screenShare',
-          'Please share your ENTIRE SCREEN, not a single window or tab. Click "Share Screen" again and choose your whole monitor.',
-        )
-        return
+      let stream
+      try {
+        stream = await requestEntireScreen()
+      } catch (err) {
+        if (err instanceof ScreenShareError) {
+          setKeyStatus('screenShare', 'failed')
+          setKeyError('screenShare', err.message)
+          return
+        }
+        throw err
       }
+      const track = stream.getVideoTracks()[0]
       setScreenStream(stream)
       await api.post(`/attempts/${attempt.id}/checklist/screen`)
       setKeyStatus('screenShare', 'passed')

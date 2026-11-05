@@ -86,13 +86,20 @@ export default function ExamsPage() {
                 <td className="px-4 py-3">
                   <div className="flex items-center justify-end gap-1.5">
                     {exam.status === 'draft' && (
-                      <>
-                        <Button size="sm" variant="secondary" icon={CheckCircle2} disabled={publishing === exam.id} onClick={() => handlePublish(exam.id)}>
-                          {publishing === exam.id ? 'Publishing…' : 'Publish'}
-                        </Button>
-                        <Button as={Link} to={`/teacher/create-exam?edit=${exam.id}`} size="sm" variant="outline" icon={Pencil}>Edit</Button>
-                      </>
+                      <Button size="sm" variant="secondary" icon={CheckCircle2} disabled={publishing === exam.id} onClick={() => handlePublish(exam.id)}>
+                        {publishing === exam.id ? 'Publishing…' : 'Publish'}
+                      </Button>
                     )}
+                    <Button
+                      as={Link}
+                      to={`/teacher/create-exam?edit=${exam.id}`}
+                      size="sm"
+                      variant="outline"
+                      icon={Pencil}
+                      title={exam.has_attempts ? 'Students have started — questions are locked, details can still be edited' : 'Edit exam'}
+                    >
+                      Edit
+                    </Button>
                     {(exam.status === 'published' || exam.status === 'active') && !exam.is_closed && (
                       <Button as={Link} to={`/teacher/monitoring/${exam.id}`} size="sm" icon={Radar}>Monitor</Button>
                     )}

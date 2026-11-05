@@ -9,9 +9,10 @@ from app.models.answer import Answer
 from app.models.alert import Alert
 from app.models.monitoring import MonitoringEvent, AttentionScore
 from app.models.identity_log import IdentityCheckLog
+from app.models.live_class import LiveClass, LiveClassAttendance, LiveClassMessage
 
 __all__ = [
     "User", "Student", "Session", "Course", "Enrollment", "ExamSession",
     "Question", "ExamAttempt", "Answer", "Alert", "MonitoringEvent", "AttentionScore",
-    "IdentityCheckLog",
+    "IdentityCheckLog", "LiveClass", "LiveClassAttendance", "LiveClassMessage",
 ]

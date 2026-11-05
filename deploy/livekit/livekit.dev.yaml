@@ -1,0 +1,14 @@
+port: 7880
+rtc:
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 50200
+  use_external_ip: false
+keys:
+  devkey: change-me-to-a-long-random-secret-at-least-32-chars
+webhook:
+  api_key: devkey
+  urls:
+    - http://localhost:8000/api/v1/live-classes/webhook
+logging:
+  level: info

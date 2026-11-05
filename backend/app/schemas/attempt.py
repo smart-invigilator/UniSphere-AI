@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AttemptOut(BaseModel):
@@ -98,8 +98,19 @@ class AnswerOut(BaseModel):
 
 
 class GradeShortAnswerIn(BaseModel):
-    marks_awarded: float = Field(ge=0)
+    marks_awarded: float
     feedback: str = Field(default="", max_length=5000)
+
+    @field_validator("marks_awarded")
+    @classmethod
+    def _valid_marks(cls, v: float) -> float:
+        if v != v or v in (float("inf"), float("-inf")):
+            raise ValueError("Marks must be a number")
+        if v < 0:
+            raise ValueError("Marks cannot be negative")
+        if round(v, 2) != round(v, 6):
+            raise ValueError("Marks can have at most 2 decimal places")
+        return round(v, 2)
 
 
 class MediaUploadOut(BaseModel):

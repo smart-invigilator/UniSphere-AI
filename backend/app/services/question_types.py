@@ -109,9 +109,34 @@ def _require_placeholders(text: str, label: str) -> int:
     return len(nums)
 
 
+def _clean_rich_content(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    if not isinstance(value, str):
+        raise ValueError("Question content must be an editor document")
+    from app.services.answer_document import AnswerDocumentError, validate_document, is_document_string
+    if not is_document_string(value):
+        raise ValueError("Question content must be an editor document")
+    try:
+        return validate_document(value, list(ANSWER_COMPONENTS))
+    except AnswerDocumentError as exc:
+        raise ValueError(f"Question content: {exc}")
+
+
 def normalize_question(qtype: str, text: str, options: Any, correct_answer: Any, settings: Any,
                        answer_key: Any, media: list) -> tuple[list | None, str | None, dict, dict | None]:
     settings = dict(settings or {})
+    rich_content = _clean_rich_content(settings.pop("rich_content", None))
+    options_out, correct_out, settings_out, key_out = _normalize_by_type(
+        qtype, text, options, correct_answer, settings, answer_key, media,
+    )
+    if rich_content is not None:
+        settings_out = {**settings_out, "rich_content": rich_content}
+    return options_out, correct_out, settings_out, key_out
+
+
+def _normalize_by_type(qtype: str, text: str, options: Any, correct_answer: Any, settings: dict,
+                       answer_key: Any, media: list) -> tuple[list | None, str | None, dict, dict | None]:
     key = dict(answer_key or {}) if isinstance(answer_key, dict) or answer_key is None else None
     if key is None:
         raise ValueError("answer_key must be an object")
@@ -310,6 +335,14 @@ def _shuffled(items: list, seed: str) -> list:
 
 
 def public_view(q, seed: str) -> tuple[list | None, dict]:
+    options, pub = _public_view_by_type(q, seed)
+    rich = (q.settings or {}).get("rich_content")
+    if rich:
+        pub = {**pub, "rich_content": rich}
+    return options, pub
+
+
+def _public_view_by_type(q, seed: str) -> tuple[list | None, dict]:
     t = q.type
     s = q.settings or {}
     k = q.answer_key or {}

@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, PlusSquare, Radar, Users, FileBarChart2, Settings, BookOpen,
+  Radio,
 } from 'lucide-react'
 import { ThemeProvider } from './context/ThemeContext'
 import { MonitorProvider } from './context/MonitorContext'
@@ -32,12 +33,17 @@ import SettingsPage from './pages/teacher/SettingsPage'
 import CoursesPage from './pages/teacher/CoursesPage'
 import CourseDetail from './pages/teacher/CourseDetail'
 import GradingPage from './pages/teacher/GradingPage'
+import LiveClassesPage from './pages/teacher/LiveClassesPage'
+import StudentLiveClasses from './pages/student/StudentLiveClasses'
+import LiveClassRoom from './pages/live/LiveClassRoom'
+import JoinByCode from './pages/live/JoinByCode'
 
 const TEACHER_NAV = [
   { to: '/teacher/dashboard', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/teacher/courses', label: 'Courses', icon: BookOpen },
   { to: '/teacher/exams', label: 'Exams', icon: FileText },
   { to: '/teacher/create-exam', label: 'Create Exam', icon: PlusSquare },
+  { to: '/teacher/live-classes', label: 'Live Classes', icon: Radio },
   { to: '/teacher/students', label: 'Students', icon: Users },
   { to: '/teacher/reports', label: 'Reports', icon: FileBarChart2 },
   { to: '/teacher/settings', label: 'Settings', icon: Settings },
@@ -66,6 +72,17 @@ export default function App() {
                     </ProtectedRoute>
                   }
                 />
+                <Route
+                  path="/student/live-classes"
+                  element={
+                    <ProtectedRoute role="student">
+                      <AppNavbar />
+                      <StudentLiveClasses />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="/live/join/:code" element={<ProtectedRoute><JoinByCode /></ProtectedRoute>} />
+                <Route path="/live/:classId" element={<ProtectedRoute><LiveClassRoom /></ProtectedRoute>} />
                 <Route path="/student/checklist/:examId" element={<ProtectedRoute role="student"><PreExamCheck /></ProtectedRoute>} />
                 <Route path="/student/exam/:examId" element={<ProtectedRoute role="student"><ExamPage /></ProtectedRoute>} />
                 <Route path="/student/exam-submitted" element={<ProtectedRoute role="student"><ExamSubmitted /></ProtectedRoute>} />
@@ -78,6 +95,7 @@ export default function App() {
                   <Route path="/teacher/courses/:courseId" element={<CourseDetail />} />
                   <Route path="/teacher/exams" element={<ExamsPage />} />
                   <Route path="/teacher/create-exam" element={<CreateExam />} />
+                  <Route path="/teacher/live-classes" element={<LiveClassesPage />} />
                   <Route path="/teacher/monitoring/:examId" element={<LiveMonitoring />} />
                   <Route path="/teacher/grading/:examId" element={<GradingPage />} />
                   <Route path="/teacher/students" element={<StudentsPage />} />

@@ -45,6 +45,7 @@ cp .env.example .env        # point DATABASE_URL at your local Postgres
 alembic upgrade head
 python -m app.seed
 uvicorn app.main:socket_app --reload
+.\livekit\livekit-server.exe --config .\deploy\livekit\livekit.dev.yaml
 ```
 
 **Frontend**:

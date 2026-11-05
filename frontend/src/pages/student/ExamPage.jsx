@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useProctorSession } from '../../context/ProctorSessionContext'
 import { api, ApiError } from '../../services/api'
 import { studentStreamService } from '../../services/socket'
-import { captureFrame, waitForVideoReady } from '../../utils/media'
+import { captureFrame, waitForVideoReady, requestEntireScreen } from '../../utils/media'
 import Button from '../../components/common/Button'
 import Modal from '../../components/common/Modal'
 import LiveFeed from '../../components/LiveFeed'
@@ -222,13 +222,7 @@ export default function ExamPage() {
         setMicStream(await navigator.mediaDevices.getUserMedia({ audio: true }))
         await api.post(`/attempts/${attemptId}/checklist/microphone`)
       } else if (key === 'screenShare') {
-        const stream = await navigator.mediaDevices.getDisplayMedia({ video: true })
-        const track = stream.getVideoTracks()[0]
-        const displaySurface = track?.getSettings?.().displaySurface
-        if (displaySurface && displaySurface !== 'monitor') {
-          track.stop()
-          throw new Error('Please share your entire screen, not a single window or tab.')
-        }
+        const stream = await requestEntireScreen()
         setScreenStream(stream)
         await api.post(`/attempts/${attemptId}/checklist/screen`)
       } else if (key === 'identity') {

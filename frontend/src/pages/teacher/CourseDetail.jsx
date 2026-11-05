@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, UserPlus, Copy, Trash2, FileText, Plus } from 'lucide-react'
+import { ArrowLeft, UserPlus, Copy, Trash2, FileText, Plus, Pencil } from 'lucide-react'
 import { api } from '../../services/api'
 import { useExams } from '../../context/ExamContext'
 import { STATUS_META } from '../../data/examData'
@@ -101,9 +101,12 @@ export default function CourseDetail() {
                     <p className="text-xs text-slate-400">{exam.duration_minutes} min · {exam.question_count} questions</p>
                   </div>
                 </div>
-                <Badge color={exam.is_closed ? STATUS_META.closed.color : (STATUS_META[exam.status]?.color || 'slate')}>
-                  {exam.is_closed ? STATUS_META.closed.label : (STATUS_META[exam.status]?.label || exam.status)}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge color={exam.is_closed ? STATUS_META.closed.color : (STATUS_META[exam.status]?.color || 'slate')}>
+                    {exam.is_closed ? STATUS_META.closed.label : (STATUS_META[exam.status]?.label || exam.status)}
+                  </Badge>
+                  <Button as={Link} to={`/teacher/create-exam?edit=${exam.id}`} size="sm" variant="outline" icon={Pencil}>Edit</Button>
+                </div>
               </div>
             ))}
             {courseExams.length === 0 && (

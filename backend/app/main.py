@@ -15,7 +15,7 @@ from slowapi import _rate_limit_exceeded_handler
 from app.core.config import settings
 from app.db.session import Base, engine
 from app import models  # noqa: F401
-from app.api import auth, students, alerts, analytics, courses, exams, attempts, uploads
+from app.api import auth, students, alerts, analytics, courses, exams, attempts, uploads, live_classes
 from app.realtime.socket_server import sio, realtime_startup, realtime_shutdown, realtime_stats
 
 logger = logging.getLogger("app.errors")
@@ -81,6 +81,7 @@ app.include_router(courses.router, prefix=settings.API_V1)
 app.include_router(exams.router, prefix=settings.API_V1)
 app.include_router(attempts.router, prefix=settings.API_V1)
 app.include_router(uploads.router, prefix=settings.API_V1)
+app.include_router(live_classes.router, prefix=settings.API_V1)
 
 os.makedirs(settings.MEDIA_ROOT, exist_ok=True)
 app.mount(settings.MEDIA_URL, StaticFiles(directory=settings.MEDIA_ROOT), name="media")

@@ -82,3 +82,38 @@ export function captureFromStream(stream, quality = 0.85) {
 export function stopStream(stream) {
   stream?.getTracks().forEach((t) => t.stop())
 }
+export class ScreenShareError extends Error {}
+
+export async function requestEntireScreen() {
+  if (!navigator.mediaDevices?.getDisplayMedia) {
+    throw new ScreenShareError('Screen sharing is not supported in this browser. Please use the latest Chrome or Edge.')
+  }
+  const options = {
+    video: { displaySurface: 'monitor' },
+    audio: false,
+    monitorTypeSurfaces: 'include',
+    selfBrowserSurface: 'exclude',
+    surfaceSwitching: 'exclude',
+    preferCurrentTab: false,
+  }
+  let controller = null
+  if (typeof window !== 'undefined' && typeof window.CaptureController === 'function') {
+    controller = new window.CaptureController()
+    options.controller = controller
+  }
+  const stream = await navigator.mediaDevices.getDisplayMedia(options)
+  if (controller && typeof controller.setFocusBehavior === 'function') {
+    try {
+      controller.setFocusBehavior('no-focus-change')
+    } catch {
+      controller = null
+    }
+  }
+  const track = stream.getVideoTracks()[0]
+  const displaySurface = track?.getSettings?.().displaySurface
+  if (displaySurface && displaySurface !== 'monitor') {
+    stream.getTracks().forEach((t) => t.stop())
+    throw new ScreenShareError('Please share your ENTIRE SCREEN, not a single window or tab. Click "Share Screen" again and choose your whole monitor.')
+  }
+  return stream
+}

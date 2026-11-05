@@ -19,12 +19,32 @@ from app.services.question_types import public_view
 router = APIRouter(prefix="/exams", tags=["exams"])
 
 
-def _exam_out(e: ExamSession, db: DBSession, my_attempt: "ExamAttempt | None" = None, pending_grading: int = 0) -> ExamOut:
+REAL_ATTEMPT_STATUSES = ("in_progress", "submitted", "graded")
+
+
+def as_utc(dt: datetime) -> datetime:
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _exams_with_attempts(db: DBSession, exam_ids: list[int]) -> set[int]:
+    if not exam_ids:
+        return set()
+    return set(db.scalars(
+        select(ExamAttempt.exam_id)
+        .where(ExamAttempt.exam_id.in_(exam_ids), ExamAttempt.status.in_(REAL_ATTEMPT_STATUSES))
+        .distinct()
+    ).all())
+
+
+def _exam_out(e: ExamSession, db: DBSession, my_attempt: "ExamAttempt | None" = None, pending_grading: int = 0,
+              has_attempts: bool | None = None) -> ExamOut:
+    if has_attempts is None:
+        has_attempts = bool(_exams_with_attempts(db, [e.id]))
     qcount = db.scalar(select(func.count(Question.id)).where(Question.exam_id == e.id)) or 0
     is_closed = bool(
         e.scheduled_end
         and e.status in ("published", "active")
-        and datetime.now(timezone.utc) > e.scheduled_end
+        and datetime.now(timezone.utc) > as_utc(e.scheduled_end)
     )
     return ExamOut(
         id=e.id, course_id=e.course_id, course_title=e.course.title, title=e.title,
@@ -38,6 +58,7 @@ def _exam_out(e: ExamSession, db: DBSession, my_attempt: "ExamAttempt | None" = 
         my_auto_score=my_attempt.auto_score if my_attempt else None,
         my_manual_score=my_attempt.manual_score if my_attempt else None,
         my_pending_grading=pending_grading,
+        has_attempts=has_attempts,
     )
 
 
@@ -128,8 +149,15 @@ def update_exam(exam_id: int, data: ExamUpdate, db: DBSession = Depends(get_db),
         raise HTTPException(404, "Exam not found")
     if exam.course.teacher_id != user.id and user.role != Role.admin:
         raise HTTPException(403, "Not your exam")
-    if exam.status != "draft":
-        raise HTTPException(400, "Only draft exams can be edited. Published exams are locked.")
+    locked = bool(_exams_with_attempts(db, [exam.id]))
+    if data.questions is not None and locked:
+        raise HTTPException(
+            400,
+            "Questions can't be changed after students have started this exam. "
+            "You can still change the title, description, schedule, duration and security settings.",
+        )
+    if data.questions is None and exam.status == "draft":
+        raise HTTPException(400, "Questions are required when editing a draft exam.")
 
     exam.title = data.title
     exam.description = data.description
@@ -138,11 +166,12 @@ def update_exam(exam_id: int, data: ExamUpdate, db: DBSession = Depends(get_db),
     exam.scheduled_end = data.scheduled_end
     exam.security = data.security.model_dump()
 
-    for q in list(exam.questions):
-        db.delete(q)
-    db.flush()
-    db.add_all([_build_question(exam.id, q, i) for i, q in enumerate(data.questions)])
-    exam.total_marks = _total_marks(data.questions)
+    if data.questions is not None:
+        for q in list(exam.questions):
+            db.delete(q)
+        db.flush()
+        db.add_all([_build_question(exam.id, q, i) for i, q in enumerate(data.questions)])
+        exam.total_marks = _total_marks(data.questions)
 
     db.commit()
     db.refresh(exam)
@@ -185,7 +214,8 @@ def list_course_exams(course_id: int, db: DBSession = Depends(get_db),
         raise HTTPException(403, "Not your course")
     rows = db.scalars(select(ExamSession).where(ExamSession.course_id == course_id)
                        .order_by(ExamSession.created_at.desc())).all()
-    return [_exam_out(e, db) for e in rows]
+    started = _exams_with_attempts(db, [e.id for e in rows])
+    return [_exam_out(e, db, has_attempts=e.id in started) for e in rows]
 
 
 @router.get("/mine", response_model=list[ExamOut])
@@ -229,7 +259,7 @@ def my_exams(db: DBSession = Depends(get_db), user: User = Depends(require_roles
     out = []
     for e in rows:
         a = attempts_by_exam.get(e.id)
-        out.append(_exam_out(e, db, my_attempt=a, pending_grading=int(pending.get(a.id, 0)) if a else 0))
+        out.append(_exam_out(e, db, my_attempt=a, pending_grading=int(pending.get(a.id, 0)) if a else 0, has_attempts=False))
     return out
 
 
@@ -274,8 +304,7 @@ def _get_or_create_attempt(exam: ExamSession, prof: Student, db: DBSession) -> E
     def window_closed() -> bool:
         if not exam.scheduled_end:
             return False
-        end = exam.scheduled_end if exam.scheduled_end.tzinfo else exam.scheduled_end.replace(tzinfo=timezone.utc)
-        return datetime.now(timezone.utc) > end
+        return datetime.now(timezone.utc) > as_utc(exam.scheduled_end)
 
     attempt = find()
     if not attempt:

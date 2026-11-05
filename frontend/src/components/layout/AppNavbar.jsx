@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, NavLink } from 'react-router-dom'
 import { Shield, Moon, Sun, LogOut, ChevronDown } from 'lucide-react'
 import { useTheme } from '../../context/ThemeContext'
 import { useAuth } from '../../context/AuthContext'
@@ -28,6 +28,19 @@ export default function AppNavbar({ leading }) {
             <h1 className="text-sm font-bold leading-tight text-slate-900 dark:text-white">UniSphere AI</h1>
             <p className="text-[10px] capitalize leading-tight text-slate-400">{user?.role} Console</p>
           </div>
+          {user?.role === 'student' && (
+            <nav className="ml-4 hidden items-center gap-1 sm:flex" aria-label="Student">
+              {[['/student/dashboard', 'Dashboard'], ['/student/live-classes', 'Live Classes']].map(([to, label]) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  className={({ isActive }) => `rounded-lg px-3 py-1.5 text-xs font-semibold ${isActive ? 'bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300' : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
+                >
+                  {label}
+                </NavLink>
+              ))}
+            </nav>
+          )}
         </div>
 
         <div className="flex items-center gap-2">

@@ -8,7 +8,8 @@ import Avatar from '../../components/Avatar'
 import MathText from '../../components/math/MathText'
 import ResponseView from '../../components/questions/ResponseView'
 import { QuestionMediaView } from '../../components/questions/QuestionMedia'
-import { isAnswerable, typeLabel } from '../../components/questions/questionTypes'
+import { isAnswerable, typeLabel, gradeMarksError } from '../../components/questions/questionTypes'
+import AnswerDocumentView from '../../components/answer-editor/AnswerDocumentView'
 
 const RISK_BADGE_COLOR = { low: 'emerald', medium: 'amber', high: 'rose' }
 const RISK_LABEL = { low: 'Low Risk', medium: 'Medium Risk', high: 'High Risk' }
@@ -78,13 +79,18 @@ export default function GradingPage() {
     ? gradableQuestions.filter((q) => answerByQuestion[q.id]?.requires_manual && !answerByQuestion[q.id]?.graded)
     : gradableQuestions
 
-  const saveGrade = async (questionId) => {
+  const saveGrade = async (questionId, maxMarks) => {
     const d = drafts[questionId] || { marks: 0, feedback: '' }
+    const invalid = gradeMarksError(d.marks, maxMarks)
+    if (invalid) {
+      setAnswersError(invalid)
+      return
+    }
     setSaving(questionId)
     setAnswersError(null)
     try {
       await api.post(`/attempts/${selected.id}/grade/${questionId}`, {
-        marks_awarded: Math.max(0, Number(d.marks) || 0),
+        marks_awarded: Number(d.marks),
         feedback: d.feedback || '',
       })
       const ans = await api.get(`/attempts/${selected.id}/answers`)
@@ -268,6 +274,11 @@ export default function GradingPage() {
                     </div>
                     <MathText text={q.text} className="mt-1 text-sm font-medium text-slate-900 dark:text-white" />
                     {q.type !== 'hotspot' && <QuestionMediaView media={q.media} className="mt-2" />}
+                    {q.settings?.rich_content && (
+                      <div className="mt-2">
+                        <AnswerDocumentView response={q.settings.rich_content} ariaLabel="Question content" testId="question-content-doc" />
+                      </div>
+                    )}
                     <div className="mt-2">
                       <ResponseView question={q} response={ans?.response} />
                     </div>
@@ -276,9 +287,16 @@ export default function GradingPage() {
                         <span className="mb-1 block font-semibold text-slate-600 dark:text-slate-300">Marks (/{q.marks})</span>
                         <input
                           type="number" min={0} max={q.marks} step="0.5" value={d.marks}
+                          aria-invalid={!!gradeMarksError(d.marks, q.marks)}
+                          aria-describedby={`marks-error-${q.id}`}
                           onChange={(e) => setDrafts((st) => ({ ...st, [q.id]: { ...d, marks: e.target.value } }))}
-                          className="input w-20"
+                          className={`input w-20 ${gradeMarksError(d.marks, q.marks) ? 'border-rose-400 ring-1 ring-rose-300' : ''}`}
                         />
+                        {gradeMarksError(d.marks, q.marks) && (
+                          <span id={`marks-error-${q.id}`} role="alert" className="mt-1 block text-[11px] font-medium text-rose-600">
+                            {gradeMarksError(d.marks, q.marks)}
+                          </span>
+                        )}
                       </label>
                       <label className="flex-1 text-xs">
                         <span className="mb-1 block font-semibold text-slate-600 dark:text-slate-300">Feedback (optional)</span>
@@ -289,7 +307,7 @@ export default function GradingPage() {
                           className="input"
                         />
                       </label>
-                      <Button size="sm" variant={manual ? 'primary' : 'outline'} icon={CheckCircle2} disabled={saving === q.id} onClick={() => saveGrade(q.id)}>
+                      <Button size="sm" variant={manual ? 'primary' : 'outline'} icon={CheckCircle2} disabled={saving === q.id || !!gradeMarksError(d.marks, q.marks)} onClick={() => saveGrade(q.id, q.marks)}>
                         {saving === q.id ? 'Saving…' : manual ? 'Save Grade' : 'Override Score'}
                       </Button>
                     </div>

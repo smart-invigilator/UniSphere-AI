@@ -1,10 +1,12 @@
 import { useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, Plus, Trash2, X, AlertCircle } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus, Trash2, X, AlertCircle, LayoutPanelTop } from 'lucide-react'
 import MathInput from '../math/MathInput'
 import MathText from '../math/MathText'
 import { MediaManager } from './QuestionMedia'
 import { api } from '../../services/api'
-import { TYPE_MAP, placeholderCount, resizeMatrix } from './questionTypes'
+import { TYPE_MAP, placeholderCount, resizeMatrix, marksError, MARKS_MIN, MARKS_MAX } from './questionTypes'
+import UnifiedAnswerEditor from '../answer-editor/UnifiedAnswerEditor'
+import { emptyDoc } from '../answer-editor/schema'
 import { COMPONENTS, COMPONENT_LABELS } from '../answer-editor/schema'
 
 const inputCls =
@@ -523,10 +525,16 @@ export default function QuestionEditor({ q, index, total, onChange, onRemove, on
             <>
               <input
                 type="number"
-                min={1}
+                min={MARKS_MIN}
+                max={MARKS_MAX}
+                step={1}
                 value={q.marks}
+                aria-label="Marks for this question"
+                aria-invalid={!!marksError(q.marks)}
                 onChange={(e) => onChange({ marks: e.target.value })}
-                className="w-14 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                className={`w-16 rounded border bg-slate-50 px-1.5 py-0.5 text-xs dark:bg-slate-800 dark:text-white ${
+                  marksError(q.marks) ? 'border-rose-400 ring-1 ring-rose-300' : 'border-slate-200 dark:border-slate-700'
+                }`}
               />
               <span className="text-[10px] text-slate-400">marks</span>
             </>
@@ -553,6 +561,39 @@ export default function QuestionEditor({ q, index, total, onChange, onRemove, on
         {usesPlaceholders && (
           <button type="button" onClick={insertPlaceholder} className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 hover:underline">
             <Plus className="h-3 w-3" /> Insert {q.type === 'dropdown' ? 'dropdown' : 'blank'} [[{placeholderCount(q.text) + 1}]]
+          </button>
+        )}
+      </div>
+
+      {q.type !== 'text_block' && marksError(q.marks) && (
+        <p className="mt-1 text-right text-[11px] font-medium text-rose-600" role="alert">{marksError(q.marks)}</p>
+      )}
+
+      <div className="mt-3">
+        {q.richContent ? (
+          <div className="space-y-1.5" data-testid="question-rich-content">
+            <div className="flex items-center justify-between">
+              <p className={labelCls}>Question content — tables, diagrams, equations, code (shown to students read-only)</p>
+              <button type="button" onClick={() => onChange({ richContent: null })} className="text-[11px] font-semibold text-rose-600 hover:underline">
+                Remove
+              </button>
+            </div>
+            <UnifiedAnswerEditor
+              key={`qc-${q.localId}`}
+              value={q.richContent}
+              onChange={(doc) => onChange({ richContent: doc })}
+              placeholder="Add reference material or hints: draw a diagram, insert a table, write equations or code…"
+              ariaLabel={`Supporting content for question ${index + 1}`}
+            />
+          </div>
+        ) : (
+          <button
+            type="button"
+            data-testid="add-question-content"
+            onClick={() => onChange({ richContent: emptyDoc() })}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:border-brand-400 hover:text-brand-700 dark:border-slate-600 dark:text-slate-300"
+          >
+            <LayoutPanelTop className="h-3.5 w-3.5" /> Add tables, diagrams, equations or code
           </button>
         )}
       </div>

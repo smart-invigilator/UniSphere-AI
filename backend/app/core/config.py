@@ -111,6 +111,17 @@ class Settings(BaseSettings):
     DB_WRITE_BATCH_MAX: int = 200
     DB_WRITE_QUEUE_MAX: int = 20000
 
+    LIVEKIT_URL: str = ""
+    LIVEKIT_API_URL: str = ""
+    LIVEKIT_API_KEY: str = ""
+    LIVEKIT_API_SECRET: str = ""
+    LIVEKIT_API_TIMEOUT_SECONDS: float = 5.0
+    LIVE_TOKEN_TTL_SECONDS: int = 900
+    LIVE_MAX_PARTICIPANTS: int = 100
+    LIVE_ROOM_EMPTY_TIMEOUT_SECONDS: int = 600
+    LIVE_ROOM_DEPARTURE_TIMEOUT_SECONDS: int = 120
+    LIVE_ATTENDANCE_MIN_SECONDS: int = 60
+
     MEDIA_ROOT: str = "media"
     MEDIA_URL: str = "/media"
     MAX_QUESTION_IMAGE_MB: int = 5

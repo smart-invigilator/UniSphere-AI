@@ -65,6 +65,7 @@ export function blankQuestion(type) {
     distractors: [],
     items: ['', '', ''],
     regions: [],
+    richContent: null,
   }
   if (type === 'mcq') base.options = ['', '', '', '']
   if (type === 'multi') {
@@ -103,7 +104,15 @@ export function questionFromApi(q) {
   const base = { ...blankQuestion(q.type), localId: `q-${q.id}-${Math.random().toString(36).slice(2, 6)}` }
   const s = q.settings || {}
   const k = q.answer_key || {}
-  const out = { ...base, text: q.text, marks: q.marks, media: q.media || [], settings: { ...base.settings, ...s } }
+  const { rich_content: richRaw, ...restSettings } = s
+  const out = {
+    ...base,
+    text: q.text,
+    marks: q.marks,
+    media: q.media || [],
+    settings: { ...base.settings, ...restSettings },
+    richContent: richRaw ? parseAnswer(richRaw).doc : null,
+  }
   if (q.type === 'mcq' || q.type === 'tf') {
     out.options = q.options || base.options
     out.correctIndex = Math.max(0, out.options.findIndex((o) => o === q.correct_answer))
@@ -149,7 +158,7 @@ export function questionFromApi(q) {
 const trimList = (list) => (list || []).map((x) => String(x ?? '').trim())
 
 export function questionToPayload(q) {
-  const marks = q.type === 'text_block' ? 0 : Math.max(1, Math.round(Number(q.marks) || 1))
+  const marks = q.type === 'text_block' ? 0 : Number(q.marks)
   const p = {
     type: q.type,
     text: q.text,
@@ -228,14 +237,43 @@ export function questionToPayload(q) {
     default:
       break
   }
+  if (q.richContent && !isDocEmpty(q.richContent)) {
+    p.settings = { ...p.settings, rich_content: serializeAnswer(q.richContent) }
+  }
   return p
+}
+
+export const MARKS_MIN = 1
+export const MARKS_MAX = 1000
+
+export function marksError(value) {
+  if (value === '' || value === null || value === undefined) return 'Enter the marks for this question.'
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 'Marks must be a number.'
+  if (!Number.isInteger(n)) return 'Marks must be a whole number.'
+  if (n < MARKS_MIN) return `Marks must be at least ${MARKS_MIN}.`
+  if (n > MARKS_MAX) return `Marks cannot be more than ${MARKS_MAX}.`
+  return null
+}
+
+export function gradeMarksError(value, max) {
+  if (value === '' || value === null || value === undefined) return 'Enter the marks to award.'
+  const n = Number(value)
+  if (!Number.isFinite(n)) return 'Marks must be a number.'
+  if (n < 0) return 'Marks cannot be negative.'
+  if (n > Number(max)) return `Marks cannot be more than ${max}.`
+  if (Math.round(n * 100) !== n * 100 && Math.abs(Math.round(n * 100) - n * 100) > 1e-6) return 'Use at most 2 decimal places.'
+  return null
 }
 
 const hasDupes = (list) => new Set(list.map((x) => x.toLowerCase())).size !== list.length
 
 export function validateQuestion(q) {
   if (!q.text.trim()) return 'Question text is required.'
-  if (q.type !== 'text_block' && !(Number(q.marks) >= 1)) return 'Marks must be at least 1.'
+  if (q.type !== 'text_block') {
+    const m = marksError(q.marks)
+    if (m) return m
+  }
   const opts = trimList(q.options)
   switch (q.type) {
     case 'mcq':
