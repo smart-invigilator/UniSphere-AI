@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Room, Track } from 'livekit-client'
 import {
   Mic, MicOff, Video, VideoOff, MonitorUp, MonitorOff, Hand, Smile, MessageSquare, Users, LayoutGrid, Presentation,
-  Maximize, Minimize, Settings2, Info, PhoneOff, Loader2, WifiOff, Volume2, Copy, X, Lock, SwitchCamera, Clock,
+  Maximize, Minimize, Settings2, ImagePlus, Info, PhoneOff, Loader2, WifiOff, Volume2, Copy, X, Lock, SwitchCamera, Clock,
 } from 'lucide-react'
 import { api } from '../../services/api'
 import Button from '../../components/common/Button'
@@ -11,6 +11,8 @@ import Modal from '../../components/common/Modal'
 import { useLiveRoom } from '../../components/live/useLiveRoom'
 import MeetingStage from '../../components/live/MeetingStage'
 import SidePanel from '../../components/live/SidePanel'
+import BackgroundPicker from '../../components/live/BackgroundPicker'
+import { useVirtualBackground } from '../../components/live/useVirtualBackground'
 import PreJoin, { DeviceSelect } from '../../components/live/PreJoin'
 import { REACTIONS, canPublish, formatDuration, mediaErrorMessage } from '../../components/live/liveUtils'
 
@@ -112,6 +114,7 @@ export default function LiveClassRoom() {
   const [showReactions, setShowReactions] = useState(false)
   const [showDevices, setShowDevices] = useState(false)
   const [showInfo, setShowInfo] = useState(false)
+  const [showBackgrounds, setShowBackgrounds] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
   const [busy, setBusy] = useState(false)
 
@@ -165,6 +168,7 @@ export default function LiveClassRoom() {
   const mayMic = isTeacher || canPublish(lp, Track.Source.Microphone)
   const mayCam = isTeacher || canPublish(lp, Track.Source.Camera)
   const mayScreen = isTeacher || canPublish(lp, Track.Source.ScreenShare)
+  const background = useVirtualBackground(room, camOn, live.pushNotice)
   const myHand = !!lp?.attributes?.hand
   const myRequest = lp?.attributes?.request || ''
   const hands = live.participants.filter((p) => p.attributes?.hand || p.attributes?.request).length
@@ -357,6 +361,7 @@ export default function LiveClassRoom() {
         <ControlButton testId="ctl-people" onClick={() => togglePanel('people')} active={panel === 'people'} icon={Users} label="Participants" badge={isTeacher && hands ? hands : null} />
         <ControlButton onClick={() => setLayout((l) => (l === 'grid' ? 'speaker' : 'grid'))} icon={layout === 'grid' ? Presentation : LayoutGrid} label={layout === 'grid' ? 'Speaker view' : 'Grid view'} testId="ctl-layout" />
         <ControlButton onClick={toggleFullscreen} icon={fullscreen ? Minimize : Maximize} label={fullscreen ? 'Exit full screen' : 'Full screen'} />
+        <ControlButton testId="ctl-background" onClick={() => setShowBackgrounds(true)} active={background.choice !== 'none'} icon={ImagePlus} label="Background effects" />
         <ControlButton onClick={() => setShowDevices(true)} icon={Settings2} label="Audio and video settings" />
         <ControlButton onClick={() => setShowInfo(true)} icon={Info} label="Meeting information" />
         <ControlButton testId="ctl-leave" onClick={leave} danger icon={PhoneOff} label="Leave class" />
@@ -368,6 +373,15 @@ export default function LiveClassRoom() {
       </footer>
 
       <DeviceSettings room={room} open={showDevices} onClose={() => setShowDevices(false)} pushNotice={live.pushNotice} />
+      <BackgroundPicker
+        open={showBackgrounds}
+        onClose={() => setShowBackgrounds(false)}
+        choice={background.choice}
+        onSelect={background.select}
+        busy={background.busy}
+        supported={background.supported}
+        cameraOn={camOn}
+      />
       <Modal open={showInfo} onClose={() => setShowInfo(false)} title="Meeting information">
         <MeetingInfo liveClass={liveClass} participants={live.participants.length} />
       </Modal>

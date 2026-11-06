@@ -15,3 +15,12 @@ if (!existsSync(target)) {
   cpSync(source, target, { recursive: true })
   console.log('[excalidraw-assets] Copied Excalidraw fonts to public/excalidraw-assets/fonts')
 }
+
+// MediaPipe WASM runtime for live-class virtual backgrounds (self-hosted, no CDN needed).
+const wasmSource = join(root, 'node_modules', '@mediapipe', 'tasks-vision', 'wasm')
+const wasmTarget = join(root, 'public', 'mediapipe', 'wasm')
+if (existsSync(wasmSource) && !existsSync(wasmTarget)) {
+  mkdirSync(dirname(wasmTarget), { recursive: true })
+  cpSync(wasmSource, wasmTarget, { recursive: true })
+  console.log('[mediapipe] Copied WASM runtime to public/mediapipe/wasm')
+}
