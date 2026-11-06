@@ -1,25 +1,32 @@
 import { useEffect, useRef, useState } from 'react'
 import { Room } from 'livekit-client'
-import { Mic, MicOff, Video, VideoOff, Loader2, Radio } from 'lucide-react'
+import { Mic, MicOff, Video, VideoOff, Loader2, Radio, ChevronDown } from 'lucide-react'
 import Button from '../common/Button'
 import { mediaErrorMessage } from './liveUtils'
 
 export function DeviceSelect({ kind, label, value, onChange, devices }) {
+  const selectId = `device-${kind}`
   return (
-    <label className="block text-xs">
-      <span className="mb-1 block font-semibold text-slate-500 dark:text-slate-400">{label}</span>
-      <select
-        value={value || ''}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-        data-kind={kind}
-      >
-        {devices.length === 0 && <option value="">Default</option>}
-        {devices.map((d, i) => (
-          <option key={d.deviceId || i} value={d.deviceId}>{d.label || `${label} ${i + 1}`}</option>
-        ))}
-      </select>
-    </label>
+    <div className="block text-xs">
+      <label htmlFor={selectId} className="mb-1 block font-semibold text-slate-600 dark:text-slate-300">{label}</label>
+      <div className="relative">
+        <select
+          id={selectId}
+          value={value || ''}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full cursor-pointer appearance-none truncate rounded-lg border border-slate-300 bg-white py-2 pl-3 pr-9 text-sm text-slate-900 shadow-sm focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-600 dark:bg-slate-800 dark:text-white"
+          data-kind={kind}
+        >
+          {devices.length === 0 && <option value="">Default</option>}
+          {devices.map((d, i) => (
+            <option key={d.deviceId || i} value={d.deviceId} className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white">
+              {d.label || `${label} ${i + 1}`}
+            </option>
+          ))}
+        </select>
+        <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500 dark:text-slate-400" />
+      </div>
+    </div>
   )
 }
 

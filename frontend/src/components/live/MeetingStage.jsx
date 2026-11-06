@@ -87,10 +87,10 @@ export default function MeetingStage({ room, participants, layout, pinned, setPi
           ))}
         </div>
         {pages > 1 && (
-          <div className="flex items-center justify-center gap-3 text-xs text-slate-300">
-            <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)} className="rounded-full bg-white/10 p-1.5 disabled:opacity-30" aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></button>
+          <div className="flex items-center justify-center gap-3 text-xs text-slate-600 dark:text-slate-300">
+            <button type="button" disabled={page === 0} onClick={() => setPage(page - 1)} className="rounded-full bg-slate-300/70 p-1.5 text-slate-700 disabled:opacity-30 dark:bg-white/10 dark:text-white" aria-label="Previous page"><ChevronLeft className="h-4 w-4" /></button>
             Page {page + 1} of {pages}
-            <button type="button" disabled={page >= pages - 1} onClick={() => setPage(page + 1)} className="rounded-full bg-white/10 p-1.5 disabled:opacity-30" aria-label="Next page"><ChevronRight className="h-4 w-4" /></button>
+            <button type="button" disabled={page >= pages - 1} onClick={() => setPage(page + 1)} className="rounded-full bg-slate-300/70 p-1.5 text-slate-700 disabled:opacity-30 dark:bg-white/10 dark:text-white" aria-label="Next page"><ChevronRight className="h-4 w-4" /></button>
           </div>
         )}
       </div>

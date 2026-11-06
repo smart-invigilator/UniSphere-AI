@@ -38,8 +38,8 @@ function ControlButton({ onClick, active, danger, label, icon: Icon, disabled, b
       title={label}
       aria-pressed={pressed}
       data-testid={testId}
-      className={`relative flex h-11 min-w-11 items-center justify-center rounded-full px-3 text-white transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:opacity-40 ${
-        danger ? 'bg-rose-600 hover:bg-rose-700' : active ? 'bg-brand-600 hover:bg-brand-700' : 'bg-white/10 hover:bg-white/20'
+      className={`relative flex h-11 min-w-11 items-center justify-center rounded-full px-3 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 disabled:opacity-40 ${
+        danger ? 'bg-rose-600 text-white hover:bg-rose-700' : active ? 'bg-brand-600 text-white hover:bg-brand-700' : 'bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-white/10 dark:text-white dark:hover:bg-white/20'
       }`}
     >
       <Icon className="h-5 w-5" />
@@ -247,18 +247,18 @@ export default function LiveClassRoom() {
 
   if (loadError) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-950 p-6 text-center text-white">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-50 p-6 text-center text-slate-900 dark:bg-slate-950 dark:text-white">
         <p className="text-lg font-semibold">{loadError}</p>
         <Button onClick={() => navigate(-1)}>Go back</Button>
       </div>
     )
   }
   if (!liveClass) {
-    return <div className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300"><Loader2 className="h-6 w-6 animate-spin" /></div>
+    return <div className="flex min-h-screen items-center justify-center bg-slate-50 text-slate-500 dark:bg-slate-950 dark:text-slate-300"><Loader2 className="h-6 w-6 animate-spin" /></div>
   }
   if (live.phase === 'ended' || live.phase === 'left' || liveClass.status === 'ended' || liveClass.status === 'cancelled') {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-950 p-6 text-center text-white" data-testid="class-ended">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-50 p-6 text-center text-slate-900 dark:bg-slate-950 dark:text-white" data-testid="class-ended">
         <p className="text-lg font-semibold">
           {live.endedReason || (live.phase === 'left' ? 'You left the class.' : liveClass.status === 'cancelled' ? 'This class was cancelled.' : 'This class has ended.')}
         </p>
@@ -278,7 +278,7 @@ export default function LiveClassRoom() {
   }
   if (live.phase === 'error') {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-950 p-6 text-center text-white">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-50 p-6 text-center text-slate-900 dark:bg-slate-950 dark:text-white">
         <WifiOff className="h-8 w-8 text-rose-400" />
         <p className="max-w-md text-base font-semibold">{live.error}</p>
         <Button onClick={() => window.location.reload()}>Try again</Button>
@@ -288,36 +288,36 @@ export default function LiveClassRoom() {
 
   const settings = live.settings || {}
   return (
-    <div className="flex h-[100dvh] flex-col bg-slate-950 text-white" data-testid="live-room" data-phase={live.phase}>
+    <div className="flex h-[100dvh] flex-col bg-slate-100 text-slate-900 dark:bg-slate-950 dark:text-white" data-testid="live-room" data-phase={live.phase}>
       <header className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
         <div className="min-w-0">
           <p className="truncate font-semibold">{liveClass.title}</p>
-          <p className="truncate text-[11px] text-slate-400">{liveClass.course_title}</p>
+          <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{liveClass.course_title}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-3 text-xs text-slate-300">
-          {settings.locked && <span className="flex items-center gap-1 text-amber-300"><Lock className="h-3.5 w-3.5" /> Locked</span>}
+        <div className="flex shrink-0 items-center gap-3 text-xs text-slate-600 dark:text-slate-300">
+          {settings.locked && <span className="flex items-center gap-1 text-amber-600 dark:text-amber-300"><Lock className="h-3.5 w-3.5" /> Locked</span>}
           <Duration startedAt={live.info?.live_class?.started_at || liveClass.started_at} />
           <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> {live.participants.length}</span>
         </div>
       </header>
 
       {(live.phase === 'reconnecting' || live.phase === 'rejoining') && (
-        <div className="mx-4 flex items-center gap-2 rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-medium text-amber-200" role="status" data-testid="reconnecting">
+        <div className="mx-4 flex items-center gap-2 rounded-lg bg-amber-500/20 px-3 py-1.5 text-xs font-medium text-amber-800 dark:text-amber-200" role="status" data-testid="reconnecting">
           <Loader2 className="h-3.5 w-3.5 animate-spin" /> Connection lost — reconnecting you to the class…
         </div>
       )}
       {live.audioBlocked && (
-        <button type="button" onClick={live.startAudio} className="mx-4 mt-1 flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold">
+        <button type="button" onClick={live.startAudio} className="mx-4 mt-1 flex items-center gap-2 rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white">
           <Volume2 className="h-4 w-4" /> Click to turn on class audio
         </button>
       )}
 
       <main className="flex min-h-0 flex-1 gap-2 p-2">
-        <div ref={stageRef} className="relative min-w-0 flex-1 bg-slate-950">
+        <div ref={stageRef} className="relative min-w-0 flex-1 rounded-xl bg-slate-200/70 dark:bg-slate-950">
           <MeetingStage room={room} participants={live.participants} layout={layout} pinned={pinned} setPinned={setPinned} spotlight={settings.spotlight} />
           <div className="pointer-events-none absolute bottom-4 left-4 flex flex-col-reverse gap-1" aria-live="polite">
             {live.reactions.map((r) => (
-              <span key={r.id} className="animate-bounce rounded-full bg-black/50 px-3 py-1 text-sm" data-testid="reaction">
+              <span key={r.id} className="animate-bounce rounded-full bg-slate-800/80 px-3 py-1 text-sm text-white" data-testid="reaction">
                 <span className="text-xl">{r.emoji}</span> <span className="text-xs text-slate-200">{r.name}</span>
               </span>
             ))}
@@ -332,7 +332,7 @@ export default function LiveClassRoom() {
 
       <div className="pointer-events-none fixed right-4 top-14 z-40 flex w-72 flex-col gap-2" aria-live="polite">
         {live.notices.map((n) => (
-          <div key={n.id} className={`rounded-lg px-3 py-2 text-xs font-medium shadow-lg ${n.tone === 'error' ? 'bg-rose-600' : n.tone === 'warning' ? 'bg-amber-500 text-amber-950' : 'bg-slate-800'}`} data-testid="notice">
+          <div key={n.id} className={`rounded-lg px-3 py-2 text-xs font-medium shadow-lg ${n.tone === 'error' ? 'bg-rose-600 text-white' : n.tone === 'warning' ? 'bg-amber-500 text-amber-950' : 'bg-slate-800 text-white'}`} data-testid="notice">
             {n.text}
           </div>
         ))}
@@ -346,9 +346,9 @@ export default function LiveClassRoom() {
         <div className="relative">
           <ControlButton testId="ctl-react" onClick={() => setShowReactions((v) => !v)} icon={Smile} label="Reactions" />
           {showReactions && (
-            <div className="absolute bottom-14 left-1/2 flex -translate-x-1/2 gap-1 rounded-full bg-slate-800 p-1.5 shadow-xl">
+            <div className="absolute bottom-14 left-1/2 flex -translate-x-1/2 gap-1 rounded-full border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-800">
               {REACTIONS.map((e) => (
-                <button key={e} type="button" onClick={() => react(e)} className="rounded-full px-1.5 py-1 text-xl hover:bg-white/10" aria-label={`React ${e}`}>{e}</button>
+                <button key={e} type="button" onClick={() => react(e)} className="rounded-full px-1.5 py-1 text-xl hover:bg-slate-100 dark:hover:bg-white/10" aria-label={`React ${e}`}>{e}</button>
               ))}
             </div>
           )}
@@ -361,7 +361,7 @@ export default function LiveClassRoom() {
         <ControlButton onClick={() => setShowInfo(true)} icon={Info} label="Meeting information" />
         <ControlButton testId="ctl-leave" onClick={leave} danger icon={PhoneOff} label="Leave class" />
         {isTeacher && (
-          <button type="button" onClick={endForAll} disabled={busy} data-testid="ctl-end" className="h-11 rounded-full bg-rose-700 px-4 text-sm font-semibold hover:bg-rose-800 disabled:opacity-50">
+          <button type="button" onClick={endForAll} disabled={busy} data-testid="ctl-end" className="h-11 rounded-full bg-rose-700 px-4 text-sm font-semibold text-white hover:bg-rose-800 disabled:opacity-50">
             End for everyone
           </button>
         )}
@@ -391,12 +391,12 @@ function MeetingInfo({ liveClass, participants }) {
     <div className="space-y-3 text-sm">
       <div>
         <p className="text-xs font-semibold uppercase text-slate-400">Meeting code</p>
-        <p className="font-mono text-lg font-bold" data-testid="meeting-code">{liveClass.meeting_code}</p>
+        <p className="font-mono text-lg font-bold text-slate-900 dark:text-white" data-testid="meeting-code">{liveClass.meeting_code}</p>
       </div>
       <div>
         <p className="text-xs font-semibold uppercase text-slate-400">Joining link (enrolled students only)</p>
         <div className="flex items-center gap-2">
-          <code className="min-w-0 flex-1 truncate rounded bg-slate-100 px-2 py-1 text-xs dark:bg-slate-800">{link}</code>
+          <code className="min-w-0 flex-1 truncate rounded bg-slate-100 px-2 py-1 text-xs text-slate-800 dark:bg-slate-800 dark:text-slate-100">{link}</code>
           <Button size="sm" variant="outline" icon={copied ? X : Copy} onClick={copy}>{copied ? 'Copied' : 'Copy'}</Button>
         </div>
       </div>

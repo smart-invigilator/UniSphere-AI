@@ -19,7 +19,7 @@ export default function Modal({ open, onClose, title, children, footer, maxWidth
       aria-modal="true"
     >
       <div
-        className={`w-full ${maxWidth} overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-700 dark:bg-slate-900`}
+        className={`w-full ${maxWidth} overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100`}
         onClick={(e) => e.stopPropagation()}
       >
         {title && (

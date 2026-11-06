@@ -209,7 +209,7 @@ export default function SidePanel({ tab, setTab, onClose, live, isTeacher, class
     { id: 'people', label: `People (${participants.length})` },
   ]
   return (
-    <aside className="flex h-full w-full flex-col bg-white dark:bg-slate-900 md:w-80 md:rounded-xl" aria-label="Class side panel" data-testid="side-panel">
+    <aside className="flex h-full w-full flex-col border border-slate-200 bg-white text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-100 md:w-80 md:rounded-xl" aria-label="Class side panel" data-testid="side-panel">
       <div className="flex items-center justify-between border-b border-slate-200 px-2 dark:border-slate-700">
         <div className="flex" role="tablist">
           {tabs.map((t) => (
@@ -218,7 +218,7 @@ export default function SidePanel({ tab, setTab, onClose, live, isTeacher, class
             </button>
           ))}
         </div>
-        <button type="button" onClick={onClose} aria-label="Close panel" className="rounded p-1 text-slate-400 hover:text-slate-700"><X className="h-4 w-4" /></button>
+        <button type="button" onClick={onClose} aria-label="Close panel" className="rounded p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"><X className="h-4 w-4" /></button>
       </div>
       {error && <p className="bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-700 dark:bg-rose-500/10" role="alert">{error}</p>}
       <div className="min-h-0 flex-1 overflow-y-auto">
