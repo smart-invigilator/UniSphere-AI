@@ -1,4 +1,9 @@
-frontend/node_modules
-backend/.pytest_cache
+frontend/node_modules/
+backend/.pytest_cache/
 backend/venv/
+
+# Environment variables
 backend/.env
+.env
+.env.*
+!.env.example
