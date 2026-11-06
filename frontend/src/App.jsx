@@ -1,7 +1,7 @@
 import { Routes, Route } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, PlusSquare, Radar, Users, FileBarChart2, Settings, BookOpen,
-  Radio,
+  Radio, ClipboardCheck,
 } from 'lucide-react'
 import { ThemeProvider } from './context/ThemeContext'
 import { MonitorProvider } from './context/MonitorContext'
@@ -9,6 +9,8 @@ import { AuthProvider } from './context/AuthContext'
 import { ExamProvider } from './context/ExamContext'
 import { ProctorSessionProvider } from './context/ProctorSessionContext'
 import Toasts from './components/Toasts'
+import NotifyToasts from './components/NotifyToasts'
+import { NotifyProvider } from './context/NotifyContext'
 import ProtectedRoute from './components/layout/ProtectedRoute'
 import DashboardLayout from './components/layout/DashboardLayout'
 import AppNavbar from './components/layout/AppNavbar'
@@ -33,6 +35,7 @@ import SettingsPage from './pages/teacher/SettingsPage'
 import CoursesPage from './pages/teacher/CoursesPage'
 import CourseDetail from './pages/teacher/CourseDetail'
 import GradingPage from './pages/teacher/GradingPage'
+import GradingCoursesPage from './pages/teacher/GradingCoursesPage'
 import LiveClassesPage from './pages/teacher/LiveClassesPage'
 import StudentLiveClasses from './pages/student/StudentLiveClasses'
 import LiveClassRoom from './pages/live/LiveClassRoom'
@@ -43,6 +46,7 @@ const TEACHER_NAV = [
   { to: '/teacher/courses', label: 'Courses', icon: BookOpen },
   { to: '/teacher/exams', label: 'Exams', icon: FileText },
   { to: '/teacher/create-exam', label: 'Create Exam', icon: PlusSquare },
+  { to: '/teacher/grading', label: 'Grading', icon: ClipboardCheck },
   { to: '/teacher/live-classes', label: 'Live Classes', icon: Radio },
   { to: '/teacher/students', label: 'Students', icon: Users },
   { to: '/teacher/reports', label: 'Reports', icon: FileBarChart2 },
@@ -52,6 +56,7 @@ const TEACHER_NAV = [
 export default function App() {
   return (
     <ThemeProvider>
+      <NotifyProvider>
       <AuthProvider>
         <ExamProvider>
           <ProctorSessionProvider>
@@ -97,6 +102,7 @@ export default function App() {
                   <Route path="/teacher/create-exam" element={<CreateExam />} />
                   <Route path="/teacher/live-classes" element={<LiveClassesPage />} />
                   <Route path="/teacher/monitoring/:examId" element={<LiveMonitoring />} />
+                  <Route path="/teacher/grading" element={<GradingCoursesPage />} />
                   <Route path="/teacher/grading/:examId" element={<GradingPage />} />
                   <Route path="/teacher/students" element={<StudentsPage />} />
                   <Route path="/teacher/reports" element={<ReportsPage />} />
@@ -106,11 +112,13 @@ export default function App() {
                 <Route path="*" element={<LandingPage />} />
               </Routes>
               <Toasts />
+              <NotifyToasts />
             </div>
           </MonitorProvider>
           </ProctorSessionProvider>
         </ExamProvider>
       </AuthProvider>
+      </NotifyProvider>
     </ThemeProvider>
   )
 }

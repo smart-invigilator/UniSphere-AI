@@ -15,6 +15,7 @@ from app.models.identity_log import IdentityCheckLog
 from app.schemas.attempt import (
     AttemptOut, FaceEnrollIn, FaceEnrollOut, LivenessCheckIn, LivenessCheckOut,
     LivenessStepIn, LivenessStepOut, AnswerIn, AnswerOut, GradeShortAnswerIn, SubmitExamOut,
+    BulkGradeIn,
 )
 from app.schemas.exam import QuestionAnswerKeyOut
 from app.core.config import settings
@@ -534,21 +535,14 @@ def list_submitted_questions(attempt_id: int, db: DBSession = Depends(get_db),
     ]
 
 
-@router.post("/{attempt_id}/grade/{question_id}", response_model=AnswerOut)
-def grade_short_answer(attempt_id: int, question_id: int, data: GradeShortAnswerIn,
-                        db: DBSession = Depends(get_db),
-                        user: User = Depends(require_roles(Role.teacher, Role.admin))):
-    a = _get_attempt(attempt_id, db)
-    if a.exam.course.teacher_id != user.id and user.role != Role.admin:
-        raise HTTPException(403, "Not your exam")
-    if a.status not in ("submitted", "graded"):
-        raise HTTPException(400, "This attempt has not been submitted yet")
+def _apply_grade(a: ExamAttempt, question_id: int, data: GradeShortAnswerIn,
+                 user: User, db: DBSession) -> Answer:
     q = db.get(Question, question_id)
     if not q or q.exam_id != a.exam_id:
         raise HTTPException(404, "Question not found in this exam")
     if q.type in NON_ANSWERABLE_TYPES:
         raise HTTPException(400, "This item is not graded")
-    ans = db.scalar(select(Answer).where(Answer.attempt_id == attempt_id, Answer.question_id == question_id))
+    ans = db.scalar(select(Answer).where(Answer.attempt_id == a.id, Answer.question_id == question_id))
     if not ans:
         ans = Answer(attempt_id=a.id, question_id=q.id, response="", requires_manual=True)
         db.add(ans)
@@ -565,8 +559,11 @@ def grade_short_answer(attempt_id: int, question_id: int, data: GradeShortAnswer
     if not ans.requires_manual:
         ans.is_correct = awarded >= float(q.marks) - 1e-9
     db.flush()
+    return ans
 
-    all_answers = db.scalars(select(Answer).where(Answer.attempt_id == attempt_id)).all()
+
+def _recompute_attempt_scores(a: ExamAttempt, db: DBSession) -> None:
+    all_answers = db.scalars(select(Answer).where(Answer.attempt_id == a.id)).all()
     manual = [x for x in all_answers if x.requires_manual]
     auto = [x for x in all_answers if not x.requires_manual]
     a.auto_score = round(sum(x.marks_awarded for x in auto), 2)
@@ -577,6 +574,47 @@ def grade_short_answer(attempt_id: int, question_id: int, data: GradeShortAnswer
     else:
         a.final_score = None
         a.status = "submitted"
+
+
+def _gradable_attempt(attempt_id: int, user: User, db: DBSession) -> ExamAttempt:
+    a = _get_attempt(attempt_id, db)
+    if a.exam.course.teacher_id != user.id and user.role != Role.admin:
+        raise HTTPException(403, "Not your exam")
+    if a.status not in ("submitted", "graded"):
+        raise HTTPException(400, "This attempt has not been submitted yet")
+    return a
+
+
+@router.post("/{attempt_id}/grade/{question_id}", response_model=AnswerOut)
+def grade_short_answer(attempt_id: int, question_id: int, data: GradeShortAnswerIn,
+                        db: DBSession = Depends(get_db),
+                        user: User = Depends(require_roles(Role.teacher, Role.admin))):
+    a = _gradable_attempt(attempt_id, user, db)
+    ans = _apply_grade(a, question_id, data, user, db)
+    _recompute_attempt_scores(a, db)
     db.commit()
     db.refresh(ans)
     return _answer_out(ans)
+
+
+@router.post("/{attempt_id}/grade", response_model=list[AnswerOut])
+def grade_bulk(attempt_id: int, data: BulkGradeIn, db: DBSession = Depends(get_db),
+               user: User = Depends(require_roles(Role.teacher, Role.admin))):
+    """Save marks/feedback for many questions of one attempt in a single atomic call."""
+    a = _gradable_attempt(attempt_id, user, db)
+    seen: set[int] = set()
+    saved: list[Answer] = []
+    try:
+        for item in data.grades:
+            if item.question_id in seen:
+                raise HTTPException(400, "Duplicate question in grade list")
+            seen.add(item.question_id)
+            saved.append(_apply_grade(a, item.question_id, item, user, db))
+        _recompute_attempt_scores(a, db)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    for ans in saved:
+        db.refresh(ans)
+    return [_answer_out(x) for x in saved]

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, Radar, CheckCircle2, Copy, ClipboardCheck, Pencil, Trash2, AlertTriangle } from 'lucide-react'
 import { useExams } from '../../context/ExamContext'
+import { useNotify } from '../../context/NotifyContext'
 import { STATUS_META } from '../../data/examData'
 import { Badge } from '../../components/common/EmptyState'
 import Button from '../../components/common/Button'
@@ -9,15 +10,16 @@ import Modal from '../../components/common/Modal'
 
 export default function ExamsPage() {
   const { exams, publishExam, deleteExam, loading } = useExams()
+  const notify = useNotify()
   const [copied, setCopied] = useState(null)
   const [publishing, setPublishing] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null) // exam object or null
   const [deleting, setDeleting] = useState(false)
-  const [deleteError, setDeleteError] = useState(null)
 
   const copyCode = (code) => {
     navigator.clipboard?.writeText(code).catch(() => {})
     setCopied(code)
+    notify.info('Exam code copied to clipboard.')
     setTimeout(() => setCopied(null), 1500)
   }
 
@@ -25,6 +27,9 @@ export default function ExamsPage() {
     setPublishing(examId)
     try {
       await publishExam(examId)
+      notify.success('Exam published successfully.')
+    } catch (err) {
+      notify.error(err.message || 'Could not publish this exam.')
     } finally {
       setPublishing(null)
     }
@@ -33,12 +38,12 @@ export default function ExamsPage() {
   const confirmDelete = async () => {
     if (!deleteTarget) return
     setDeleting(true)
-    setDeleteError(null)
     try {
       await deleteExam(deleteTarget.id)
+      notify.success('Exam deleted successfully.')
       setDeleteTarget(null)
     } catch (err) {
-      setDeleteError(err.message || 'Could not delete this exam.')
+      notify.error(err.message || 'Could not delete this exam.')
     } finally {
       setDeleting(false)
     }
@@ -105,7 +110,7 @@ export default function ExamsPage() {
                     )}
                     <Button as={Link} to={`/teacher/grading/${exam.id}`} size="sm" variant="outline" icon={ClipboardCheck}>Grade</Button>
                     <button
-                      onClick={() => { setDeleteTarget(exam); setDeleteError(null) }}
+                      onClick={() => setDeleteTarget(exam)}
                       className="rounded-lg p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10"
                       title="Delete exam"
                     >
@@ -139,11 +144,6 @@ export default function ExamsPage() {
           This permanently deletes <span className="font-semibold">{deleteTarget?.title}</span> and all of its questions.
           This can't be undone.
         </p>
-        {deleteError && (
-          <p className="mt-3 flex items-start gap-1.5 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-400">
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> {deleteError}
-          </p>
-        )}
       </Modal>
     </main>
   )

@@ -113,6 +113,14 @@ class GradeShortAnswerIn(BaseModel):
         return round(v, 2)
 
 
+class BulkGradeItemIn(GradeShortAnswerIn):
+    question_id: int
+
+
+class BulkGradeIn(BaseModel):
+    grades: list[BulkGradeItemIn] = Field(min_length=1, max_length=500)
+
+
 class MediaUploadOut(BaseModel):
     url: str
     name: str

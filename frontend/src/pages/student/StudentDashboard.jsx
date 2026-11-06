@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { KeyRound, Clock, BookOpen, CheckCircle2, CalendarClock, ArrowRight, AlertCircle, GraduationCap, Plus } from 'lucide-react'
+import { KeyRound, Clock, BookOpen, CheckCircle2, CalendarClock, ArrowRight, GraduationCap, Plus } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useExams } from '../../context/ExamContext'
+import { useNotify } from '../../context/NotifyContext'
 import { Badge } from '../../components/common/EmptyState'
 import Button from '../../components/common/Button'
 import Modal from '../../components/common/Modal'
@@ -57,15 +58,14 @@ export default function StudentDashboard() {
     refresh()
   }, [refresh])
 
+  const notify = useNotify()
   const [codeOpen, setCodeOpen] = useState(false)
   const [code, setCode] = useState('')
   const [joining, setJoining] = useState(false)
-  const [error, setError] = useState('')
 
   const [courseCodeOpen, setCourseCodeOpen] = useState(false)
   const [courseCode, setCourseCode] = useState('')
   const [enrolling, setEnrolling] = useState(false)
-  const [courseError, setCourseError] = useState('')
 
   const visible = useMemo(
     () => exams.map((e) => ({ ...e, studentStatus: studentStatus(e) })).filter((e) => e.studentStatus),
@@ -84,12 +84,12 @@ export default function StudentDashboard() {
   const joinByCode = async (e) => {
     e.preventDefault()
     setJoining(true)
-    setError('')
     try {
       const attempt = await joinExamByCode(code.trim().toUpperCase())
+      notify.success('Joined the exam session. Complete the checklist to begin.')
       navigate(`/student/checklist/${attempt.exam_id}`)
     } catch (err) {
-      setError(err.message || 'Could not join with that code.')
+      notify.error(err.message || 'Could not join with that code.')
     } finally {
       setJoining(false)
     }
@@ -98,13 +98,13 @@ export default function StudentDashboard() {
   const joinCourseByCode = async (e) => {
     e.preventDefault()
     setEnrolling(true)
-    setCourseError('')
     try {
-      await enrollByCode(courseCode.trim().toUpperCase())
+      const c = await enrollByCode(courseCode.trim().toUpperCase())
+      notify.success(`Enrolled in ${c?.title || 'the course'} successfully.`)
       setCourseCodeOpen(false)
       setCourseCode('')
     } catch (err) {
-      setCourseError(err.message || 'Could not enroll with that code.')
+      notify.error(err.message || 'Could not enroll with that code.')
     } finally {
       setEnrolling(false)
     }
@@ -120,8 +120,8 @@ export default function StudentDashboard() {
           <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Here's what's happening with your exams.</p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" icon={Plus} onClick={() => { setCourseCodeOpen(true); setCourseError('') }}>Join Course</Button>
-          <Button icon={KeyRound} onClick={() => { setCodeOpen(true); setError('') }}>Join Exam Session</Button>
+          <Button variant="outline" icon={Plus} onClick={() => setCourseCodeOpen(true)}>Join Course</Button>
+          <Button icon={KeyRound} onClick={() => setCodeOpen(true)}>Join Exam Session</Button>
         </div>
       </div>
 
@@ -216,9 +216,6 @@ export default function StudentDashboard() {
             />
             <p className="mt-1.5 text-[11px] text-slate-400">You must already be enrolled in the exam's course to join.</p>
           </div>
-          {error && (
-            <p className="flex items-center gap-1.5 text-xs font-medium text-rose-600"><AlertCircle className="h-3.5 w-3.5" /> {error}</p>
-          )}
           <Button type="submit" className="w-full" disabled={joining}>{joining ? 'Joining…' : 'Join Session'}</Button>
         </form>
       </Modal>
@@ -237,9 +234,6 @@ export default function StudentDashboard() {
             />
             <p className="mt-1.5 text-[11px] text-slate-400">Get this code from your instructor.</p>
           </div>
-          {courseError && (
-            <p className="flex items-center gap-1.5 text-xs font-medium text-rose-600"><AlertCircle className="h-3.5 w-3.5" /> {courseError}</p>
-          )}
           <Button type="submit" className="w-full" disabled={enrolling}>{enrolling ? 'Joining…' : 'Join Course'}</Button>
         </form>
       </Modal>

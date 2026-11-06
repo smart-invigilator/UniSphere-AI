@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Plus, Radio, Loader2 } from 'lucide-react'
 import { api } from '../../services/api'
 import { useExams } from '../../context/ExamContext'
+import { useNotify } from '../../context/NotifyContext'
 import Button from '../../components/common/Button'
 import Modal from '../../components/common/Modal'
 import { LiveClassCard } from '../../components/live/LiveClassList'
@@ -14,15 +15,14 @@ function toLocalInput(date) {
 }
 
 function CreateLiveClass({ open, onClose, courses, onCreated }) {
+  const notify = useNotify()
   const [form, setForm] = useState({ course_id: '', title: '', description: '', when: '', start_now: false })
-  const [error, setError] = useState(null)
   const [saving, setSaving] = useState(false)
   useEffect(() => {
     if (open) {
       const soon = new Date(Date.now() + 60 * 60 * 1000)
       soon.setMinutes(0, 0, 0)
       setForm({ course_id: courses[0]?.id || '', title: '', description: '', when: toLocalInput(soon), start_now: false })
-      setError(null)
     }
   }, [open, courses])
   const set = (patch) => setForm((f) => ({ ...f, ...patch }))
@@ -31,7 +31,6 @@ function CreateLiveClass({ open, onClose, courses, onCreated }) {
   const submit = async () => {
     if (titleError || whenError || !form.course_id) return
     setSaving(true)
-    setError(null)
     try {
       const lc = await api.post('/live-classes', {
         course_id: Number(form.course_id),
@@ -42,7 +41,7 @@ function CreateLiveClass({ open, onClose, courses, onCreated }) {
       })
       onCreated(lc)
     } catch (err) {
-      setError(err.message)
+      notify.error(err.message || 'Could not create the live class.')
     } finally {
       setSaving(false)
     }
@@ -73,7 +72,6 @@ function CreateLiveClass({ open, onClose, courses, onCreated }) {
         )}
         {form.title && titleError && <p className="text-[11px] font-medium text-rose-600" role="alert">{titleError}</p>}
         <p className="text-xs text-slate-400">Every student enrolled in the course can join. Only enrolled students can use the link.</p>
-        {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-500/10" role="alert">{error}</p>}
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button disabled={saving || !!titleError || !!whenError || !form.course_id} onClick={submit} icon={saving ? Loader2 : form.start_now ? Radio : Plus} data-testid="lc-create">
@@ -127,29 +125,24 @@ function Attendance({ lc, onClose }) {
 export default function LiveClassesPage() {
   const { courses } = useExams()
   const navigate = useNavigate()
+  const notify = useNotify()
   const [classes, setClasses] = useState(null)
-  const [error, setError] = useState(null)
   const [creating, setCreating] = useState(false)
   const [attendanceFor, setAttendanceFor] = useState(null)
   const [busy, setBusy] = useState(false)
-  const [toast, setToast] = useState(null)
 
-  const load = useCallback(() => api.get('/live-classes/mine').then(setClasses).catch((e) => setError(e.message)), [])
+  const load = useCallback(() => api.get('/live-classes/mine').then(setClasses).catch((e) => notify.error(e.message || 'Could not load live classes.')), [notify])
   useEffect(() => {
     load()
   }, [load])
 
-  const flash = (text) => {
-    setToast(text)
-    setTimeout(() => setToast(null), 2500)
-  }
   const start = async (lc) => {
     setBusy(true)
     try {
       await api.post(`/live-classes/${lc.id}/start`)
       navigate(`/live/${lc.id}`)
     } catch (e) {
-      setError(e.message)
+      notify.error(e.message || 'Could not start the live class.')
     } finally {
       setBusy(false)
     }
@@ -158,17 +151,18 @@ export default function LiveClassesPage() {
     if (!window.confirm(`Cancel "${lc.title}"?`)) return
     try {
       await api.delete(`/live-classes/${lc.id}`)
+      notify.success('Live class cancelled.')
       load()
     } catch (e) {
-      setError(e.message)
+      notify.error(e.message || 'Could not cancel the live class.')
     }
   }
   const copy = async (lc) => {
     try {
       await navigator.clipboard.writeText(`${window.location.origin}/live/join/${lc.meeting_code}`)
-      flash('Joining link copied')
+      notify.info('Joining link copied to clipboard.')
     } catch {
-      flash(`Meeting code: ${lc.meeting_code}`)
+      notify.info(`Meeting code: ${lc.meeting_code}`)
     }
   }
 
@@ -182,8 +176,6 @@ export default function LiveClassesPage() {
         <Button icon={Plus} onClick={() => setCreating(true)} disabled={!courses.length} data-testid="new-live-class">New live class</Button>
       </div>
       {!courses.length && <p className="text-sm text-slate-500">Create a course first — live classes belong to a course.</p>}
-      {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-500/10" role="alert">{error}</p>}
-      {toast && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-500/10">{toast}</p>}
       {classes === null ? (
         <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
       ) : classes.length === 0 ? (
@@ -202,7 +194,10 @@ export default function LiveClassesPage() {
         onCreated={(lc) => {
           setCreating(false)
           if (lc.status === 'live') navigate(`/live/${lc.id}`)
-          else load()
+          else {
+            notify.success('Live class scheduled successfully.')
+            load()
+          }
         }}
       />
       <Attendance lc={attendanceFor} onClose={() => setAttendanceFor(null)} />

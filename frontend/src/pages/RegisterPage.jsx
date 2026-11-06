@@ -2,46 +2,47 @@ import { useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Shield, User, Mail, Lock, GraduationCap, ClipboardCheck } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useNotify } from '../context/NotifyContext'
 import Button from '../components/common/Button'
 import FaceScan360 from '../components/face/FaceScan360'
 
 export default function RegisterPage() {
   const { register } = useAuth()
+  const notify = useNotify()
   const navigate = useNavigate()
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', role: 'student' })
   const [faceScan, setFaceScan] = useState(null)
   const [scanKey, setScanKey] = useState(0)
-  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
   const onScanComplete = useCallback(({ frames }) => {
     setFaceScan(frames)
-    setError('')
-  }, [])
+    notify.success('Face scan captured.')
+  }, [notify])
 
   const submit = async (e) => {
     e.preventDefault()
     if (form.password !== form.confirm) {
-      setError("Passwords don't match.")
+      notify.error("Passwords don't match.")
       return
     }
     if (form.password.length < 6) {
-      setError('Password must be at least 6 characters long.')
+      notify.error('Password must be at least 6 characters long.')
       return
     }
     if (form.role === 'student' && !faceScan?.length) {
-      setError('Please complete the 360° face scan to finish registration.')
+      notify.error('Please complete the 360° face scan to finish registration.')
       return
     }
-    setError('')
     setLoading(true)
     try {
       const registered = await register({ ...form, faceScan })
+      notify.success('Account created successfully. Welcome!')
       navigate(registered.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard')
     } catch (err) {
-      setError(err.message || 'Registration failed')
+      notify.error(err.message || 'Registration failed')
       if (err?.status === 400 && /scan|view|person/i.test(err.message || '')) {
         setFaceScan(null)
         setScanKey((k) => k + 1)
@@ -96,7 +97,6 @@ export default function RegisterPage() {
                 busy={loading}
               />
             )}
-            {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-400">{error}</p>}
             <Button type="submit" className="w-full" size="lg" disabled={loading}>{loading ? 'Creating…' : 'Create Account'}</Button>
           </form>
 

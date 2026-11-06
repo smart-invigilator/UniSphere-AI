@@ -21,6 +21,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useExams } from "../../context/ExamContext";
+import { useNotify } from "../../context/NotifyContext";
 import { api } from "../../services/api";
 import { Stepper } from "../../components/common/ProgressBar";
 import Button from "../../components/common/Button";
@@ -114,6 +115,7 @@ function toLocalDatetimeInput(iso) {
 export default function CreateExam() {
   const { courses, createExam, updateExam, publishExam } = useExams();
   const navigate = useNavigate();
+  const notify = useNotify();
   const [searchParams] = useSearchParams();
   const editId = searchParams.get("edit");
   const isEditing = !!editId;
@@ -121,7 +123,6 @@ export default function CreateExam() {
   const [step, setStep] = useState(0);
   const [exam, setExam] = useState(blankExam());
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
   const [showErrors, setShowErrors] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -273,7 +274,6 @@ export default function CreateExam() {
 
   const save = async (publish) => {
     setSaving(true);
-    setError(null);
     try {
       const saved = isEditing
         ? await updateExam(editId, buildPayload())
@@ -281,11 +281,13 @@ export default function CreateExam() {
       if (publish && saved.status === "draft") {
         const published = await publishExam(saved.id);
         setResult(published);
+        notify.success("Exam published successfully.");
       } else {
         setResult(saved);
+        notify.success(isEditing ? "Exam updated successfully." : "Exam saved as draft.");
       }
     } catch (e) {
-      setError(e.message || "Could not save the exam");
+      notify.error(e.message || "Could not save the exam");
     } finally {
       setSaving(false);
     }
@@ -636,11 +638,6 @@ export default function CreateExam() {
                 </span>
               ))}
             </div>
-            {error && (
-              <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-400">
-                {error}
-              </p>
-            )}
           </StepShell>
         )}
       </div>

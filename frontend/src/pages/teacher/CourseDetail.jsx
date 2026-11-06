@@ -3,6 +3,7 @@ import { useParams, Link } from 'react-router-dom'
 import { ArrowLeft, UserPlus, Copy, Trash2, FileText, Plus, Pencil } from 'lucide-react'
 import { api } from '../../services/api'
 import { useExams } from '../../context/ExamContext'
+import { useNotify } from '../../context/NotifyContext'
 import { STATUS_META } from '../../data/examData'
 import { Badge } from '../../components/common/EmptyState'
 import Button from '../../components/common/Button'
@@ -11,12 +12,12 @@ import Avatar from '../../components/Avatar'
 export default function CourseDetail() {
   const { courseId } = useParams()
   const { exams: allExams, refresh } = useExams()
+  const notify = useNotify()
   const [course, setCourse] = useState(null)
   const [roster, setRoster] = useState([])
   const [loading, setLoading] = useState(true)
   const [email, setEmail] = useState('')
   const [adding, setAdding] = useState(false)
-  const [error, setError] = useState(null)
   const [copied, setCopied] = useState(false)
 
   const load = useCallback(async () => {
@@ -39,27 +40,33 @@ export default function CourseDetail() {
 
   const addStudent = async (e) => {
     e.preventDefault()
-    setError(null)
     setAdding(true)
     try {
       await api.post(`/courses/${courseId}/students`, { email })
+      notify.success(`${email} was added to the course.`)
       setEmail('')
       await load()
     } catch (err) {
-      setError(err.message)
+      notify.error(err.message || 'Could not add this student.')
     } finally {
       setAdding(false)
     }
   }
 
   const removeStudent = async (studentId) => {
-    await api.delete(`/courses/${courseId}/students/${studentId}`)
-    await load()
+    try {
+      await api.delete(`/courses/${courseId}/students/${studentId}`)
+      notify.success('Student removed from the course.')
+      await load()
+    } catch (err) {
+      notify.error(err.message || 'Could not remove this student.')
+    }
   }
 
   const copyCode = () => {
     navigator.clipboard?.writeText(course.code).catch(() => {})
     setCopied(true)
+    notify.info('Course code copied to clipboard.')
     setTimeout(() => setCopied(false), 1500)
   }
 
@@ -127,7 +134,6 @@ export default function CourseDetail() {
             />
             <Button type="submit" size="sm" icon={UserPlus} disabled={adding}>{adding ? '…' : 'Add'}</Button>
           </form>
-          {error && <p className="mt-1.5 text-[11px] font-medium text-rose-600">{error}</p>}
 
           <div className="mt-3 space-y-1.5">
             {roster.map((s) => (

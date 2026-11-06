@@ -2,34 +2,36 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Plus, Copy, Users, FileText, BookOpen } from 'lucide-react'
 import { useExams } from '../../context/ExamContext'
+import { useNotify } from '../../context/NotifyContext'
 import Button from '../../components/common/Button'
 import Modal from '../../components/common/Modal'
 import EmptyState from '../../components/common/EmptyState'
 
 export default function CoursesPage() {
   const { courses, createCourse, loading } = useExams()
+  const notify = useNotify()
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState({ title: '', subject: '', description: '' })
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState(null)
   const [copied, setCopied] = useState(null)
 
   const copyCode = (code) => {
     navigator.clipboard?.writeText(code).catch(() => {})
     setCopied(code)
+    notify.info('Course code copied to clipboard.')
     setTimeout(() => setCopied(null), 1500)
   }
 
   const submit = async (e) => {
     e.preventDefault()
     setSaving(true)
-    setError(null)
     try {
-      await createCourse(form)
+      const created = await createCourse(form)
+      notify.success(`Course "${created?.title || form.title}" created successfully.`)
       setOpen(false)
       setForm({ title: '', subject: '', description: '' })
     } catch (err) {
-      setError(err.message)
+      notify.error(err.message || 'Could not create the course.')
     } finally {
       setSaving(false)
     }
@@ -100,7 +102,6 @@ export default function CoursesPage() {
         }
       >
         <form onSubmit={submit} className="space-y-3">
-          {error && <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-400">{error}</p>}
           <Field label="Course title">
             <input
               autoFocus

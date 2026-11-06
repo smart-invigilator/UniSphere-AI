@@ -7,30 +7,23 @@ import { useExams } from '../../context/ExamContext'
 import { api } from '../../services/api'
 import StatCard from '../../components/StatCard'
 import { Badge } from '../../components/common/EmptyState'
+import { useCourseSubmissions, filterByStudent, SearchBox, CourseGrid } from '../../components/teacher/courseSubmissions'
 import Button from '../../components/common/Button'
 
 const PIE_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#f43f5e']
 
 export default function ReportsPage() {
   const { theme } = useTheme()
-  const { exams } = useExams()
+  const { courses } = useExams()
   const grid = theme === 'dark' ? '#1e293b' : '#e2e8f0'
   const axis = theme === 'dark' ? '#64748b' : '#94a3b8'
   const tooltipStyle = { background: theme === 'dark' ? '#0f172a' : '#fff', border: `1px solid ${grid}`, borderRadius: 8, fontSize: 12, color: theme === 'dark' ? '#e2e8f0' : '#0f172a' }
 
   const [summary, setSummary] = useState(null)
-  const [attempts, setAttempts] = useState([])
-
+  const { attempts, submitted: submittedAttempts, courseCards } = useCourseSubmissions()
   useEffect(() => {
     api.get('/analytics/summary').then(setSummary).catch(() => {})
   }, [])
-
-  useEffect(() => {
-    if (exams.length === 0) return
-    Promise.all(
-      exams.map((e) => api.get(`/attempts/exam/${e.id}`).then((rows) => rows.map((r) => ({ ...r, examTitle: e.title }))).catch(() => []))
-    ).then((lists) => setAttempts(lists.flat()))
-  }, [exams])
 
   const violationData = useMemo(() => {
     const byType = summary?.alertsByType || {}
@@ -48,10 +41,15 @@ export default function ReportsPage() {
     return Object.entries(counts).map(([name, value]) => ({ name, value })).filter((d) => d.value > 0)
   }, [attempts])
 
-  const submittedAttempts = attempts
-    .filter((a) => a.status === 'submitted' || a.status === 'graded')
-    .sort((a, b) => new Date(b.submitted_at || 0) - new Date(a.submitted_at || 0))
-    .slice(0, 20)
+  const [selectedCourseId, setSelectedCourseId] = useState(null)
+  const [search, setSearch] = useState('')
+  const selectedCourse = courses.find((c) => c.id === selectedCourseId)
+  const openCourse = (id) => { setSearch(''); setSelectedCourseId(id) }
+
+  const courseSubmissions = useMemo(
+    () => filterByStudent(submittedAttempts.filter((a) => a.courseId === selectedCourseId), search),
+    [submittedAttempts, selectedCourseId, search]
+  )
 
   return (
     <main className="mx-auto max-w-[1400px] px-4 py-6">
@@ -108,11 +106,26 @@ export default function ReportsPage() {
       </section>
 
       <section className="mt-5">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Recent Submissions</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            {selectedCourse ? `Submissions · ${selectedCourse.title}` : 'Submissions by Course'}
+          </h2>
+          {selectedCourse && (
+            <div className="flex w-full items-center gap-2 sm:w-auto">
+              <SearchBox value={search} onChange={setSearch} placeholder="Search by name, email or exam…" />
+              <Button size="sm" variant="outline" onClick={() => setSelectedCourseId(null)}>← All courses</Button>
+            </div>
+          )}
+        </div>
+
+        {!selectedCourse && <CourseGrid cards={courseCards} onSelect={openCourse} />}
+
+        {selectedCourse && (
         <div className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
           <table className="w-full min-w-[700px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-200 text-xs uppercase tracking-wide text-slate-400 dark:border-slate-800">
+                <th className="px-4 py-3 font-medium">Student</th>
                 <th className="px-4 py-3 font-medium">Attempt</th>
                 <th className="px-4 py-3 font-medium">Exam</th>
                 <th className="px-4 py-3 font-medium">Score</th>
@@ -121,25 +134,30 @@ export default function ReportsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {submittedAttempts.map((a) => (
+              {courseSubmissions.map((a) => (
                 <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                  <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">#{a.id}</td>
+                  <td className="px-4 py-3">
+                    <p className="font-semibold text-slate-900 dark:text-white">{a.student_name || '—'}</p>
+                    <p className="text-xs text-slate-400">{a.student_code}</p>
+                  </td>
+                  <td className="px-4 py-3 font-semibold text-slate-900 dark:text-white">#{a.attemptNo}</td>
                   <td className="px-4 py-3 text-slate-500 dark:text-slate-400">{a.examTitle}</td>
                   <td className="px-4 py-3">
                     <span className="font-bold text-slate-700 dark:text-slate-200">{a.final_score ?? a.auto_score}</span>
                   </td>
                   <td className="px-4 py-3"><Badge color={a.status === 'graded' ? 'emerald' : 'amber'}>{a.status}</Badge></td>
                   <td className="px-4 py-3 text-right">
-                    <Button as={Link} to={`/teacher/grading/${a.exam_id}`} size="sm" variant="outline">Grade</Button>
+                    <Button as={Link} to={`/teacher/grading/${a.exam_id}?attempt=${a.id}`} size="sm" variant="outline">Grade</Button>
                   </td>
                 </tr>
               ))}
-              {submittedAttempts.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-slate-400">No submissions yet.</td></tr>
+              {courseSubmissions.length === 0 && (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-sm text-slate-400">{search ? 'No students match your search.' : 'No submissions for this course yet.'}</td></tr>
               )}
             </tbody>
           </table>
         </div>
+        )}
       </section>
     </main>
   )

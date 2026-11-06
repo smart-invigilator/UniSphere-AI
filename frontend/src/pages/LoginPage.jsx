@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Shield, GraduationCap, ClipboardCheck, Mail, Lock, ArrowLeft } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useNotify } from '../context/NotifyContext'
 import Button from '../components/common/Button'
 import FaceScan360 from '../components/face/FaceScan360'
 
@@ -10,6 +11,7 @@ const safeReturnPath = (from) => (typeof from === 'string' && from.startsWith('/
 
 export default function LoginPage() {
   const { login, completeFaceLogin } = useAuth()
+  const notify = useNotify()
   const navigate = useNavigate()
   const location = useLocation()
   const returnTo = safeReturnPath(location.state?.from)
@@ -20,7 +22,6 @@ export default function LoginPage() {
   const [scanKey, setScanKey] = useState(0)
   const [verifying, setVerifying] = useState(false)
 
-  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleLoginResult = (result) => {
@@ -29,24 +30,23 @@ export default function LoginPage() {
       setScanKey((k) => k + 1)
       return
     }
+    notify.success('Login successful. Welcome back!')
     navigate(returnTo || homeFor(result.role))
   }
 
   const submit = async (e) => {
     e.preventDefault()
-    setError('')
     setLoading(true)
     try {
       handleLoginResult(await login({ email, password }))
     } catch (err) {
-      setError(err.message || 'Login failed')
+      notify.error(err.message || 'Login failed')
     } finally {
       setLoading(false)
     }
   }
 
   const quickLogin = async (r) => {
-    setError('')
     setLoading(true)
     try {
       const creds = r === 'teacher'
@@ -54,7 +54,7 @@ export default function LoginPage() {
         : { email: 'student1@proctor.io', password: 'student123' }
       handleLoginResult(await login(creds))
     } catch (err) {
-      setError(err.message || 'Demo login failed')
+      notify.error(err.message || 'Demo login failed')
     } finally {
       setLoading(false)
     }
@@ -62,27 +62,26 @@ export default function LoginPage() {
 
   const onScanComplete = useCallback(async ({ frames }) => {
     if (!challenge) return
-    setError('')
     setVerifying(true)
     try {
       const user = await completeFaceLogin({ faceToken: challenge.faceToken, faceScan: frames })
+      notify.success('Face verified. Login successful!')
       navigate(returnTo || homeFor(user.role))
     } catch (err) {
       if (err?.status === 401) {
         setChallenge(null)
-        setError(err.message || 'Your login session expired. Enter your password again.')
+        notify.error(err.message || 'Your login session expired. Enter your password again.')
       } else {
-        setError(err.message || 'Face verification failed. Please scan again.')
+        notify.error(err.message || 'Face verification failed. Please scan again.')
         setScanKey((k) => k + 1)
       }
     } finally {
       setVerifying(false)
     }
-  }, [challenge, completeFaceLogin, navigate])
+  }, [challenge, completeFaceLogin, navigate, notify, returnTo])
 
   const backToPassword = () => {
     setChallenge(null)
-    setError('')
   }
 
   return (
@@ -109,9 +108,6 @@ export default function LoginPage() {
                   ? `Hi ${challenge.name}, complete a quick 360° face scan to finish logging in.`
                   : `Hi ${challenge.name}, your account needs a one-time 360° face scan. It will be checked against your registered photo.`}
               </p>
-              {error && (
-                <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-400">{error}</p>
-              )}
               <div className="mt-4">
                 <FaceScan360
                   key={scanKey}
@@ -126,10 +122,6 @@ export default function LoginPage() {
             <>
               <h1 className="text-lg font-bold text-slate-900 dark:text-white">Welcome back</h1>
               <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Log in to continue to your dashboard.</p>
-
-              {error && (
-                <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-400">{error}</p>
-              )}
 
               <form onSubmit={submit} className="mt-5 space-y-4">
                 <div>
