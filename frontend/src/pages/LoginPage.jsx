@@ -131,7 +131,7 @@ export default function LoginPage() {
                     <input
                       id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
                       placeholder="you@campus.edu"
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      className="auth-input w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     />
                   </div>
                 </div>
@@ -142,13 +142,13 @@ export default function LoginPage() {
                     <input
                       id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
                       placeholder="••••••••"
-                      className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+                      className="auth-input w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
                     />
                   </div>
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <label className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
-                    <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="rounded border-slate-300" />
+                    <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="auth-checkbox h-4 w-4 rounded border-slate-300" />
                     Remember me
                   </label>
                   <button type="button" className="font-medium text-brand-600 hover:underline">Forgot password?</button>

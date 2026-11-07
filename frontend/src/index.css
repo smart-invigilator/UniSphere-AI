@@ -53,6 +53,33 @@ body {
 }
 .dark .input:focus { background: theme('colors.slate.800'); }
 
+.auth-input:-webkit-autofill,
+.auth-input:-webkit-autofill:hover,
+.auth-input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px theme('colors.slate.50') inset;
+  -webkit-text-fill-color: theme('colors.slate.900');
+  caret-color: theme('colors.slate.900');
+}
+
+.dark .auth-input:-webkit-autofill,
+.dark .auth-input:-webkit-autofill:hover,
+.dark .auth-input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px theme('colors.slate.800') inset;
+  -webkit-text-fill-color: white;
+  caret-color: white;
+}
+
+.auth-checkbox {
+  accent-color: theme('colors.brand.600');
+  background-color: theme('colors.slate.50');
+  color-scheme: light;
+}
+
+.dark .auth-checkbox {
+  background-color: theme('colors.slate.800');
+  color-scheme: dark;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
