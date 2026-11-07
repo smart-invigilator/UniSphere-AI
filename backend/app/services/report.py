@@ -1,12 +1,8 @@
 """PDF exam-integrity report generation for a single attempt.
 
-Fix: the old version used only the built-in Helvetica font, which supports
-Latin-1 characters only. Any exam title, course name, student name or alert
-text containing a character such as an en dash, smart quote, "·", "…" or
-Urdu/Arabic text raised FPDFUnicodeEncodingException -> HTTP 500 -> the
-download silently failed in the browser. The report now uses a Unicode TTF
-font when one is available on the machine (Arial on Windows, DejaVu on
-Linux) and otherwise safely converts text to Latin-1 instead of crashing.
+Uses a Unicode TTF font when one is available on the machine (Arial on
+Windows, DejaVu on Linux) and otherwise safely converts text to Latin-1
+instead of crashing on characters such as en dashes or smart quotes.
 """
 import io
 import os
@@ -23,6 +19,17 @@ SEVERITY_COLOR = {"low": (161, 98, 7), "medium": (194, 65, 12), "high": (185, 28
 
 # Only embed screenshots for high-severity alerts, and cap the count.
 MAX_EMBEDDED_SCREENSHOTS = 12
+
+NAVY = (30, 41, 82)
+SLATE = (71, 85, 105)
+MUTED = (110, 120, 135)
+LIGHT_BG = (243, 246, 251)
+BORDER = (214, 220, 230)
+HIGH_BG = (254, 226, 226)
+
+MARGIN = 14
+PAGE_W = 210
+CONTENT_W = PAGE_W - 2 * MARGIN
 
 # (regular, bold) Unicode font candidates, first match wins.
 _FONT_CANDIDATES = [
@@ -70,6 +77,13 @@ class _ReportPDF(FPDF):
     def font(self, style: str = "", size: int = 11):
         self.set_font(self.family, style, size)
 
+    def footer(self):
+        self.set_xy(MARGIN, -12)
+        self.font("", 8)
+        self.set_text_color(*MUTED)
+        self.cell(CONTENT_W / 2, 5, "UniSphere AI  -  Confidential exam integrity report")
+        self.cell(CONTENT_W / 2, 5, f"Page {self.page_no()} of {{nb}}", align="R")
+
     def clean(self, text) -> str:
         text = "" if text is None else str(text)
         if self.unicode_font:
@@ -77,13 +91,6 @@ class _ReportPDF(FPDF):
         for k, v in _LATIN1_REPLACEMENTS.items():
             text = text.replace(k, v)
         return text.encode("latin-1", "replace").decode("latin-1")
-
-    def line_text(self, text, h: float = 6):
-        """One full-width line of text, then move to the next line."""
-        self.cell(0, h, self.clean(text), new_x="LMARGIN", new_y="NEXT")
-
-    def para(self, text, h: float = 7):
-        self.multi_cell(0, h, self.clean(text), new_x="LMARGIN", new_y="NEXT")
 
 
 def _fmt_dt(value, fmt="%Y-%m-%d %H:%M UTC"):
@@ -107,6 +114,94 @@ def _num(value):
         return str(value)
 
 
+def _risk_color(level):
+    return SEVERITY_COLOR.get(str(level).lower(), (22, 101, 52))
+
+
+def _section_title(pdf, title):
+    pdf.ln(3)
+    pdf.set_x(MARGIN)
+    pdf.font("B", 12)
+    pdf.set_text_color(*NAVY)
+    pdf.cell(0, 8, pdf.clean(title), new_x="LMARGIN", new_y="NEXT")
+    y = pdf.get_y()
+    pdf.set_draw_color(*NAVY)
+    pdf.set_line_width(0.5)
+    pdf.line(MARGIN, y, MARGIN + CONTENT_W, y)
+    pdf.set_line_width(0.2)
+    pdf.ln(3)
+    pdf.set_text_color(0, 0, 0)
+
+
+def _info_grid(pdf, rows):
+    """Two-column grid of (label, value) pairs inside a light bordered card."""
+    col_w = CONTENT_W / 2
+    row_h = 13
+    n_rows = (len(rows) + 1) // 2
+    top = pdf.get_y()
+    pdf.set_fill_color(*LIGHT_BG)
+    pdf.set_draw_color(*BORDER)
+    pdf.rect(MARGIN, top, CONTENT_W, n_rows * row_h + 4, style="DF")
+    max_w = col_w - 8
+    for idx, (label, value) in enumerate(rows):
+        r, c = divmod(idx, 2)
+        x = MARGIN + 4 + c * col_w
+        y = top + 3 + r * row_h
+        pdf.set_xy(x, y)
+        pdf.font("", 8)
+        pdf.set_text_color(*MUTED)
+        pdf.cell(max_w, 4, pdf.clean(label.upper()))
+        pdf.set_xy(x, y + 4.5)
+        pdf.font("B", 10)
+        pdf.set_text_color(20, 25, 40)
+        text = pdf.clean(value)
+        if pdf.get_string_width(text) > max_w:
+            while len(text) > 1 and pdf.get_string_width(text + "...") > max_w:
+                text = text[:-1]
+            text += "..."
+        pdf.cell(max_w, 5, text)
+    pdf.set_y(top + n_rows * row_h + 4)
+    pdf.set_text_color(0, 0, 0)
+
+
+def _stat_cards(pdf, cards):
+    """Row of equal cards: (label, value, (r, g, b) accent colour)."""
+    gap = 4
+    w = (CONTENT_W - gap * (len(cards) - 1)) / len(cards)
+    top = pdf.get_y()
+    h = 20
+    for i, (label, value, color) in enumerate(cards):
+        x = MARGIN + i * (w + gap)
+        pdf.set_fill_color(255, 255, 255)
+        pdf.set_draw_color(*BORDER)
+        pdf.rect(x, top, w, h, style="DF")
+        pdf.set_fill_color(*color)
+        pdf.rect(x, top, 1.6, h, style="F")
+        pdf.set_xy(x + 5, top + 3)
+        pdf.font("", 8)
+        pdf.set_text_color(*MUTED)
+        pdf.cell(w - 7, 4, pdf.clean(label.upper()))
+        pdf.set_xy(x + 5, top + 9)
+        pdf.font("B", 14)
+        pdf.set_text_color(*color)
+        pdf.cell(w - 7, 8, pdf.clean(value))
+    pdf.set_y(top + h)
+    pdf.set_text_color(0, 0, 0)
+
+
+def _image_height(img, width):
+    try:
+        from PIL import Image
+        img.seek(0)
+        with Image.open(img) as im:
+            iw, ih = im.size
+        img.seek(0)
+        return width * ih / iw if iw else width * 0.75
+    except Exception:
+        img.seek(0)
+        return width * 0.75
+
+
 def build_attempt_report(attempt: ExamAttempt, db: DBSession) -> bytes:
     risk = compute_risk(attempt.id, db)
     alerts = db.scalars(
@@ -117,91 +212,121 @@ def build_attempt_report(attempt: ExamAttempt, db: DBSession) -> bytes:
     student = attempt.student
     student_user = student.user if student is not None else None
     course = exam.course if exam is not None else None
+    teacher = getattr(course, "teacher", None) if course is not None else None
 
     pdf = _ReportPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.alias_nb_pages()
+    pdf.set_margins(MARGIN, MARGIN, MARGIN)
+    pdf.set_auto_page_break(auto=True, margin=18)
     pdf.add_page()
 
-    pdf.font("B", 18)
-    pdf.line_text("Exam Integrity Report", 10)
+    # --- Header band ---
+    pdf.set_fill_color(*NAVY)
+    pdf.rect(0, 0, PAGE_W, 34, style="F")
+    pdf.set_xy(MARGIN, 8)
+    pdf.font("B", 20)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(CONTENT_W, 9, "Exam Integrity Report", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_x(MARGIN)
     pdf.font("", 10)
-    pdf.set_text_color(110, 110, 110)
-    pdf.line_text(f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+    pdf.set_text_color(200, 210, 235)
+    pdf.cell(CONTENT_W, 6, pdf.clean(exam.title if exam is not None else "Exam"),
+             new_x="LMARGIN", new_y="NEXT")
+    pdf.set_x(MARGIN)
+    pdf.font("", 8)
+    pdf.cell(CONTENT_W, 5, f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
+    pdf.set_y(42)
     pdf.set_text_color(0, 0, 0)
-    pdf.ln(4)
 
-    pdf.font("B", 13)
-    pdf.para(exam.title if exam is not None else "Exam")
-    pdf.font("", 11)
-    pdf.line_text(f"Course: {course.title if course is not None else '-'}")
+    # --- Student & exam details ---
     student_name = student_user.name if student_user is not None else "-"
     student_code = student.student_id if student is not None else "-"
-    pdf.line_text(f"Student: {student_name}  ({student_code})")
-    pdf.line_text(f"Attempt #{attempt.id}  -  Status: {attempt.status}")
-    if attempt.started_at:
-        pdf.line_text(f"Started: {_fmt_dt(attempt.started_at)}")
-    if attempt.submitted_at:
-        pdf.line_text(f"Submitted: {_fmt_dt(attempt.submitted_at)}")
-    pdf.ln(4)
+    course_name = course.title if course is not None else "-"
+    if course is not None and getattr(course, "code", None):
+        course_name = f"{course_name} ({course.code})"
+    instructor = getattr(teacher, "name", None) or "-"
+
+    _section_title(pdf, "Student & Exam Information")
+    _info_grid(pdf, [
+        ("Student name", student_name),
+        ("Student ID", str(student_code)),
+        ("Attempt", f"#{attempt.id}  -  {str(attempt.status).replace('_', ' ').title()}"),
+        ("Exam", exam.title if exam is not None else "-"),
+        ("Course", course_name),
+        ("Instructor", instructor),
+        ("Exam started", _fmt_dt(attempt.started_at)),
+        ("Exam ended", _fmt_dt(attempt.submitted_at)),
+    ])
 
     # --- Score summary ---
-    pdf.font("B", 12)
-    pdf.line_text("Score Summary", 8)
-    pdf.font("", 11)
     total_marks = exam.total_marks if exam is not None else "-"
     final = attempt.final_score if attempt.final_score is not None else attempt.auto_score
-    pdf.line_text(f"Auto-graded: {_num(attempt.auto_score)} / {_num(total_marks)}")
-    pdf.line_text(f"Manually graded: {_num(attempt.manual_score)}")
-    pdf.font("B", 11)
-    pdf.line_text(f"Final score: {_num(final)} / {_num(total_marks)}")
-    pdf.ln(4)
+    _section_title(pdf, "Score Summary")
+    _stat_cards(pdf, [
+        ("Auto-graded", f"{_num(attempt.auto_score)} / {_num(total_marks)}", SLATE),
+        ("Manually graded", _num(attempt.manual_score), SLATE),
+        ("Final score", f"{_num(final)} / {_num(total_marks)}", NAVY),
+    ])
 
     # --- Integrity summary ---
-    pdf.font("B", 12)
-    pdf.line_text("Integrity Summary", 8)
-    pdf.font("", 11)
-    pdf.line_text(f"Suspicion score: {risk['suspicion_score']}")
-    pdf.set_text_color(*SEVERITY_COLOR.get(risk["risk_level"], (0, 0, 0)))
-    pdf.font("B", 11)
-    pdf.line_text(f"Risk level: {str(risk['risk_level']).upper()}")
-    pdf.set_text_color(0, 0, 0)
-    pdf.font("", 11)
     c = risk["alert_counts"]
-    pdf.line_text(
-        f"Alerts - low: {c.get('low', 0)}   medium: {c.get('medium', 0)}   "
-        f"high: {c.get('high', 0)}   (total {risk['total_alerts']})"
-    )
+    _section_title(pdf, "Integrity Summary")
+    _stat_cards(pdf, [
+        ("Suspicion score", str(risk["suspicion_score"]), SLATE),
+        ("Risk level", str(risk["risk_level"]).upper(), _risk_color(risk["risk_level"])),
+        ("Total alerts", str(risk["total_alerts"]), SLATE),
+    ])
     pdf.ln(4)
+    _stat_cards(pdf, [
+        ("Low severity", str(c.get("low", 0)), SEVERITY_COLOR["low"]),
+        ("Medium severity", str(c.get("medium", 0)), SEVERITY_COLOR["medium"]),
+        ("High severity", str(c.get("high", 0)), SEVERITY_COLOR["high"]),
+    ])
 
-    # --- Violation timeline ---
-    pdf.font("B", 12)
-    pdf.line_text("Violation Timeline", 8)
-    pdf.font("", 10)
-    if not alerts:
-        pdf.line_text("No violations recorded.")
+    # --- High-severity snapshots, two per row ---
+    shots = []
     for a in alerts:
-        pdf.set_text_color(*SEVERITY_COLOR.get(a.severity, (0, 0, 0)))
-        ts = _fmt_dt(a.timestamp, "%H:%M:%S")
-        conf = float(a.confidence or 0.0)
-        pdf.line_text(f"[{ts}] {a.alert_type}  (severity: {a.severity}, confidence: {conf:.2f})")
-    pdf.set_text_color(0, 0, 0)
-
-    # --- High-severity screenshots ---
-    shots = [a for a in alerts if a.severity == "high" and a.screenshot][:MAX_EMBEDDED_SCREENSHOTS]
-    if shots:
-        pdf.add_page()
-        pdf.font("B", 12)
-        pdf.line_text("High-Severity Violation Snapshots", 8)
-        pdf.font("", 9)
-        for a in shots:
+        if a.severity == "high" and a.screenshot:
             img = _decode_screenshot(a.screenshot)
-            if img is None:
-                continue
-            pdf.line_text(f"{a.alert_type}  -  {_fmt_dt(a.timestamp, '%H:%M:%S')}")
-            try:
-                pdf.image(img, w=80)
-            except Exception:
-                pdf.line_text("(image could not be embedded)")
-            pdf.ln(2)
+            if img is not None:
+                shots.append((a, img))
+        if len(shots) >= MAX_EMBEDDED_SCREENSHOTS:
+            break
+
+    if shots:
+        gap = 6
+        col_w = (CONTENT_W - gap) / 2
+        label_h = 7
+        first_h = max(_image_height(img, col_w) for _, img in shots[:2]) + label_h + 4
+        if pdf.get_y() + 14 + first_h > pdf.h - 18:
+            pdf.add_page()
+        _section_title(pdf, "High-Severity Violation Snapshots")
+        for i in range(0, len(shots), 2):
+            pair = shots[i:i + 2]
+            heights = [_image_height(img, col_w) for _, img in pair]
+            row_h = max(heights) + label_h + 4
+            if pdf.get_y() + row_h > pdf.h - 18:
+                pdf.add_page()
+            top = pdf.get_y()
+            for j, (a, img) in enumerate(pair):
+                x = MARGIN + j * (col_w + gap)
+                pdf.set_draw_color(*BORDER)
+                pdf.set_fill_color(*HIGH_BG)
+                pdf.rect(x, top, col_w, label_h, style="DF")
+                pdf.set_xy(x + 2, top + 1)
+                pdf.font("B", 8)
+                pdf.set_text_color(*SEVERITY_COLOR["high"])
+                label = f"{str(a.alert_type).replace('_', ' ').title()}  |  {_fmt_dt(a.timestamp, '%H:%M:%S')}"
+                pdf.cell(col_w - 4, 5, pdf.clean(label))
+                try:
+                    pdf.image(img, x=x, y=top + label_h, w=col_w)
+                    pdf.rect(x, top + label_h, col_w, heights[j], style="D")
+                except Exception:
+                    pdf.set_xy(x + 2, top + label_h + 2)
+                    pdf.font("", 8)
+                    pdf.set_text_color(*MUTED)
+                    pdf.cell(col_w - 4, 5, "(image could not be embedded)")
+            pdf.set_y(top + row_h)
+            pdf.set_text_color(0, 0, 0)
 
     return bytes(pdf.output())
