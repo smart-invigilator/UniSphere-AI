@@ -30,7 +30,7 @@ export function LiveClassCard({ lc, isTeacher, onStart, onCancel, onAttendance, 
       </div>
       <div className="flex flex-wrap gap-2">
         {lc.status === 'live' && (
-          <Button as={Link} to={`/live/${lc.id}`} size="sm" icon={Radio}>{isTeacher ? 'Open class' : 'Join'}</Button>
+          <Button as={Link} to={`/live/${lc.ref}`} size="sm" icon={Radio}>{isTeacher ? 'Open class' : 'Join'}</Button>
         )}
         {isTeacher && lc.status === 'scheduled' && (
           <>

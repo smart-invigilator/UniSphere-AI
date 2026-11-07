@@ -1,5 +1,6 @@
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
+from app.core.refs import CourseOut_
 
 
 class CourseCreate(BaseModel):
@@ -9,7 +10,7 @@ class CourseCreate(BaseModel):
 
 
 class CourseOut(BaseModel):
-    id: int
+    id: CourseOut_
     title: str
     subject: str
     description: str

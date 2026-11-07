@@ -3,6 +3,7 @@ import socket
 import threading
 import time
 
+from app.core.refs import ATTEMPT, EXAM, encode_ref
 import pytest
 
 from app.core.config import settings
@@ -50,9 +51,9 @@ def _seed():
         a = ExamAttempt(exam_id=exam.id, student_id=st.id, status="in_progress")
         db.add(a)
         db.flush()
-        students.append({"attempt": a.id, "token": create_access_token(str(u.id), "student"), "code": st.student_id})
+        students.append({"attempt": encode_ref(ATTEMPT, a.id), "token": create_access_token(str(u.id), "student"), "code": st.student_id})
     db.commit()
-    info = {"exam": exam.id, "teacher": create_access_token(str(t.id), "teacher"), "students": students}
+    info = {"exam": encode_ref(EXAM, exam.id), "teacher": create_access_token(str(t.id), "teacher"), "students": students}
     db.close()
     return info
 

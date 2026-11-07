@@ -16,7 +16,7 @@ export default function GradingCoursesPage() {
   const [search, setSearch] = useState('')
   const [onlyPending, setOnlyPending] = useState(false)
 
-  const courseId = Number(params.get('course')) || null
+  const courseId = params.get('course') || null
   const course = courses.find((c) => c.id === courseId)
 
   const openCourse = (id) => { setSearch(''); setParams({ course: String(id) }) }

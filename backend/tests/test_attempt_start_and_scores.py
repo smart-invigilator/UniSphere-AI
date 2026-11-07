@@ -1,4 +1,5 @@
 import json
+from app.core.refs import ATTEMPT, EXAM, decode_ref
 import sqlalchemy as sa
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,7 +30,7 @@ def doc(text):
 def test_start_survives_duplicate_insert_race(world, monkeypatch):
     eid, _ = make_exam(world)
     db = world["db"]
-    db.add(ExamAttempt(exam_id=eid, student_id=world["student_pk"], status="checklist"))
+    db.add(ExamAttempt(exam_id=decode_ref(EXAM, eid), student_id=world["student_pk"], status="checklist"))
     db.commit()
     real_select = exams_api.select
     calls = {"n": 0}
@@ -47,8 +48,8 @@ def test_start_survives_duplicate_insert_race(world, monkeypatch):
     assert r.status_code == 200, r.text
     assert calls["n"] >= 2
     monkeypatch.setattr(exams_api, "select", real_select)
-    rows = db.scalars(sa.select(ExamAttempt).where(ExamAttempt.exam_id == eid)).all()
-    assert len(rows) == 1 and r.json()["id"] == rows[0].id
+    rows = db.scalars(sa.select(ExamAttempt).where(ExamAttempt.exam_id == decode_ref(EXAM, eid))).all()
+    assert len(rows) == 1 and decode_ref(ATTEMPT, r.json()["id"]) == rows[0].id
 
 
 def test_repeated_start_returns_same_attempt(world):
@@ -95,3 +96,15 @@ def test_unhandled_errors_keep_cors_headers():
     assert r.status_code == 500
     assert r.headers.get("access-control-allow-origin") == "http://localhost:5173"
     assert "try again" in r.json()["detail"]
+
+def test_numeric_and_forged_ids_are_rejected(world):
+    c = world["client"]
+    from app.core.refs import encode_ref, COURSE
+    eid = c.post("/api/v1/exams", headers=world["T"], json={"course_id": world["course_id"], "title": "Refs",
+                 "questions": [{"type": "mcq", "text": "q", "options": ["a", "b"], "correct_answer": "a", "marks": 1}]}).json()["id"]
+    assert not eid.isdigit() and len(eid) >= 20
+    assert c.get(f"/api/v1/exams/{eid}", headers=world["T"]).status_code == 200
+    assert c.get("/api/v1/exams/1", headers=world["T"]).status_code == 422
+    assert c.get(f"/api/v1/exams/{eid[:-2]}xx", headers=world["T"]).status_code == 422
+    # a course reference can't be used as an exam reference
+    assert c.get(f"/api/v1/exams/{world['course_id']}", headers=world["T"]).status_code == 422

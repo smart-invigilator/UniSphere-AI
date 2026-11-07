@@ -1,10 +1,11 @@
 from datetime import datetime
 from pydantic import BaseModel, Field, field_validator
+from app.core.refs import AttemptOut_, ExamOut_
 
 
 class AttemptOut(BaseModel):
-    id: int
-    exam_id: int
+    id: AttemptOut_
+    exam_id: ExamOut_
     student_id: int
     status: str
     started_at: datetime | None
@@ -130,7 +131,7 @@ class MediaUploadOut(BaseModel):
 
 
 class SubmitExamOut(BaseModel):
-    attempt_id: int
+    attempt_id: AttemptOut_
     status: str
     auto_score: float
     total_marks: int

@@ -15,6 +15,7 @@ from fastapi.testclient import TestClient
 from app.db.session import Base, engine, SessionLocal
 from app import models  # noqa: F401
 from app.api import exams, attempts
+from app.core.refs import ATTEMPT, COURSE, EXAM, decode_ref, encode_ref
 from app.core.security import create_access_token, hash_password
 from app.models.user import User, Role
 from app.models.student import Student
@@ -46,7 +47,7 @@ def world():
     ctx = {
         "client": TestClient(app),
         "db": db,
-        "course_id": course.id,
+        "course_id": encode_ref(COURSE, course.id),
         "student_pk": student.id,
         "T": {"Authorization": "Bearer " + create_access_token(str(teacher.id), "teacher")},
         "S": {"Authorization": "Bearer " + create_access_token(str(student_user.id), "student")},
@@ -57,7 +58,7 @@ def world():
 
 def start_attempt(ctx, exam_id):
     db = ctx["db"]
-    a = ExamAttempt(exam_id=exam_id, student_id=ctx["student_pk"], status="in_progress")
+    a = ExamAttempt(exam_id=decode_ref(EXAM, exam_id), student_id=ctx["student_pk"], status="in_progress")
     db.add(a)
     db.commit()
-    return a.id
+    return encode_ref(ATTEMPT, a.id)

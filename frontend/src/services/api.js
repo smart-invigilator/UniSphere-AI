@@ -215,7 +215,15 @@ export const api = {
     return data
   },
 
-  mediaUrl: (url) => (url && url.startsWith('/media/') ? `${API_URL}${url}` : ''),
+  // Student answer files are private: the backend requires a valid access token.
+  mediaUrl: (url) => {
+    if (!url || !url.startsWith('/media/')) return ''
+    if (url.startsWith('/media/answers/')) {
+      const token = getTokens()?.access_token
+      return token ? `${API_URL}${url}?access_token=${encodeURIComponent(token)}` : ''
+    }
+    return `${API_URL}${url}`
+  },
 
   // Auth (no bearer token needed for these calls themselves)
   login: (email, password) => request('/auth/login', { method: 'POST', body: { email, password }, auth: false }),

@@ -87,8 +87,11 @@ def _role_in(lc: LiveClass, user: User, db: DBSession) -> str | None:
     return "student" if enrolled else None
 
 
-def _get_class(class_id: int, db: DBSession, lock: bool = False) -> LiveClass:
-    q = select(LiveClass).where(LiveClass.id == class_id).options(
+def _get_class(class_id: int | str, db: DBSession, lock: bool = False) -> LiveClass:
+    # Clients address a class by its random reference (never the sequential
+    # database id); ints are only passed by server-side code.
+    key = LiveClass.id == class_id if isinstance(class_id, int) else LiveClass.room_name == class_id
+    q = select(LiveClass).where(key).options(
         selectinload(LiveClass.course), selectinload(LiveClass.teacher),
     )
     if lock:
@@ -99,7 +102,7 @@ def _get_class(class_id: int, db: DBSession, lock: bool = False) -> LiveClass:
     return lc
 
 
-def _member(class_id: int, user: User, db: DBSession, lock: bool = False) -> tuple[LiveClass, str]:
+def _member(class_id: int | str, user: User, db: DBSession, lock: bool = False) -> tuple[LiveClass, str]:
     lc = _get_class(class_id, db, lock=lock)
     role = _role_in(lc, user, db)
     if role is None:
@@ -107,7 +110,7 @@ def _member(class_id: int, user: User, db: DBSession, lock: bool = False) -> tup
     return lc, role
 
 
-def _teacher(class_id: int, user: User, db: DBSession, lock: bool = False) -> LiveClass:
+def _teacher(class_id: int | str, user: User, db: DBSession, lock: bool = False) -> LiveClass:
     lc, role = _member(class_id, user, db, lock=lock)
     if role != "teacher":
         raise HTTPException(403, "Only the class teacher can do this")
@@ -116,7 +119,7 @@ def _teacher(class_id: int, user: User, db: DBSession, lock: bool = False) -> Li
 
 def _out(lc: LiveClass, role: str) -> LiveClassOut:
     return LiveClassOut(
-        id=lc.id, course_id=lc.course_id, course_title=lc.course.title, teacher_name=lc.teacher.name,
+        id=lc.id, ref=lc.room_name, course_id=lc.course_id, course_title=lc.course.title, teacher_name=lc.teacher.name,
         title=lc.title, description=lc.description, status=lc.status,
         scheduled_start=_utc(lc.scheduled_start), started_at=_utc(lc.started_at), ended_at=_utc(lc.ended_at),
         meeting_code=lc.meeting_code, created_at=_utc(lc.created_at), my_role=role, settings=public_settings(lc),
@@ -226,13 +229,13 @@ def resolve_meeting_code(code: str, db: DBSession = Depends(get_db), user: User 
 
 
 @router.get("/{class_id}", response_model=LiveClassOut)
-def get_live_class(class_id: int, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
+def get_live_class(class_id: str, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
     lc, role = _member(class_id, user, db)
     return _out(lc, role)
 
 
 @router.patch("/{class_id}", response_model=LiveClassOut)
-def update_live_class(class_id: int, data: LiveClassUpdate, db: DBSession = Depends(get_db),
+def update_live_class(class_id: str, data: LiveClassUpdate, db: DBSession = Depends(get_db),
                       user: User = Depends(require_roles(Role.teacher, Role.admin))):
     lc = _teacher(class_id, user, db, lock=True)
     if lc.status not in ("scheduled", "live"):
@@ -248,7 +251,7 @@ def update_live_class(class_id: int, data: LiveClassUpdate, db: DBSession = Depe
 
 
 @router.delete("/{class_id}", status_code=204)
-def cancel_live_class(class_id: int, db: DBSession = Depends(get_db),
+def cancel_live_class(class_id: str, db: DBSession = Depends(get_db),
                       user: User = Depends(require_roles(Role.teacher, Role.admin))):
     lc = _teacher(class_id, user, db, lock=True)
     if lc.status != "scheduled":
@@ -259,7 +262,7 @@ def cancel_live_class(class_id: int, db: DBSession = Depends(get_db),
 
 
 @router.post("/{class_id}/start", response_model=LiveClassOut)
-def start_live_class(class_id: int, db: DBSession = Depends(get_db),
+def start_live_class(class_id: str, db: DBSession = Depends(get_db),
                      user: User = Depends(require_roles(Role.teacher, Role.admin))):
     lc = _teacher(class_id, user, db, lock=True)
     if lc.status == "live":
@@ -277,7 +280,7 @@ def start_live_class(class_id: int, db: DBSession = Depends(get_db),
 
 
 @router.post("/{class_id}/end", response_model=LiveClassOut)
-def end_live_class(class_id: int, db: DBSession = Depends(get_db),
+def end_live_class(class_id: str, db: DBSession = Depends(get_db),
                    user: User = Depends(require_roles(Role.teacher, Role.admin))):
     lc = _teacher(class_id, user, db, lock=True)
     if lc.status != "live":
@@ -299,7 +302,7 @@ def end_live_class(class_id: int, db: DBSession = Depends(get_db),
 
 
 @router.post("/{class_id}/join", response_model=JoinOut)
-def join_live_class(class_id: int, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
+def join_live_class(class_id: str, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
     lc, role = _member(class_id, user, db)
     if lc.status in ("ended", "cancelled"):
         raise HTTPException(410, "This class has ended.")
@@ -343,7 +346,7 @@ def _participant_identities(lc: LiveClass, students_only: bool = True) -> list[d
 
 
 @router.patch("/{class_id}/settings")
-def update_settings(class_id: int, data: LiveSettingsUpdate, db: DBSession = Depends(get_db),
+def update_settings(class_id: str, data: LiveSettingsUpdate, db: DBSession = Depends(get_db),
                     user: User = Depends(require_roles(Role.teacher, Role.admin))):
     _limit(moderation_limiter, user, "moderate")
     lc = _teacher(class_id, user, db, lock=True)
@@ -372,7 +375,7 @@ def update_settings(class_id: int, data: LiveSettingsUpdate, db: DBSession = Dep
 
 
 @router.post("/{class_id}/participants/{user_id}/mute", status_code=204)
-def mute_participant(class_id: int, user_id: int, data: MuteIn, db: DBSession = Depends(get_db),
+def mute_participant(class_id: str, user_id: int, data: MuteIn, db: DBSession = Depends(get_db),
                      user: User = Depends(require_roles(Role.teacher, Role.admin))):
     _limit(moderation_limiter, user, "moderate")
     lc = _teacher(class_id, user, db)
@@ -391,7 +394,7 @@ def mute_participant(class_id: int, user_id: int, data: MuteIn, db: DBSession = 
 
 
 @router.post("/{class_id}/mute-all", status_code=204)
-def mute_all(class_id: int, db: DBSession = Depends(get_db),
+def mute_all(class_id: str, db: DBSession = Depends(get_db),
              user: User = Depends(require_roles(Role.teacher, Role.admin))):
     _limit(moderation_limiter, user, "moderate")
     lc = _teacher(class_id, user, db)
@@ -411,7 +414,7 @@ def mute_all(class_id: int, db: DBSession = Depends(get_db),
 
 
 @router.post("/{class_id}/participants/{user_id}/remove", status_code=204)
-def remove_participant(class_id: int, user_id: int, db: DBSession = Depends(get_db),
+def remove_participant(class_id: str, user_id: int, db: DBSession = Depends(get_db),
                        user: User = Depends(require_roles(Role.teacher, Role.admin))):
     _limit(moderation_limiter, user, "moderate")
     lc = _teacher(class_id, user, db, lock=True)
@@ -431,7 +434,7 @@ def remove_participant(class_id: int, user_id: int, db: DBSession = Depends(get_
 
 
 @router.post("/{class_id}/participants/{user_id}/readmit", status_code=204)
-def readmit_participant(class_id: int, user_id: int, db: DBSession = Depends(get_db),
+def readmit_participant(class_id: str, user_id: int, db: DBSession = Depends(get_db),
                         user: User = Depends(require_roles(Role.teacher, Role.admin))):
     lc = _teacher(class_id, user, db, lock=True)
     s = _settings(lc)
@@ -441,7 +444,7 @@ def readmit_participant(class_id: int, user_id: int, db: DBSession = Depends(get
 
 
 @router.post("/{class_id}/participants/{user_id}/permissions")
-def set_participant_permissions(class_id: int, user_id: int, data: ParticipantPermissionsIn, db: DBSession = Depends(get_db),
+def set_participant_permissions(class_id: str, user_id: int, data: ParticipantPermissionsIn, db: DBSession = Depends(get_db),
                                 user: User = Depends(require_roles(Role.teacher, Role.admin))):
     _limit(moderation_limiter, user, "moderate")
     lc = _teacher(class_id, user, db, lock=True)
@@ -471,7 +474,7 @@ def set_participant_permissions(class_id: int, user_id: int, data: ParticipantPe
 
 
 @router.post("/{class_id}/participants/{user_id}/lower-hand", status_code=204)
-def lower_hand(class_id: int, user_id: int, db: DBSession = Depends(get_db),
+def lower_hand(class_id: str, user_id: int, db: DBSession = Depends(get_db),
                user: User = Depends(require_roles(Role.teacher, Role.admin))):
     lc = _teacher(class_id, user, db)
     _require_live(lc)
@@ -482,7 +485,7 @@ def lower_hand(class_id: int, user_id: int, db: DBSession = Depends(get_db),
 
 
 @router.post("/{class_id}/hand", status_code=204)
-def raise_hand(class_id: int, data: HandIn, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
+def raise_hand(class_id: str, data: HandIn, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
     _limit(state_limiter, user, "hand")
     lc, _role = _member(class_id, user, db)
     _require_live(lc)
@@ -494,7 +497,7 @@ def raise_hand(class_id: int, data: HandIn, db: DBSession = Depends(get_db), use
 
 
 @router.post("/{class_id}/request", status_code=204)
-def request_permission(class_id: int, data: RequestIn, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
+def request_permission(class_id: str, data: RequestIn, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
     _limit(state_limiter, user, "request")
     lc, role = _member(class_id, user, db)
     _require_live(lc)
@@ -515,7 +518,7 @@ def _message_out(m: LiveClassMessage, teacher_id: int) -> MessageOut:
 
 
 @router.get("/{class_id}/messages", response_model=list[MessageOut])
-def list_messages(class_id: int, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
+def list_messages(class_id: str, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
     lc, role = _member(class_id, user, db)
     q = (select(LiveClassMessage).options(selectinload(LiveClassMessage.user))
          .where(LiveClassMessage.live_class_id == lc.id))
@@ -526,7 +529,7 @@ def list_messages(class_id: int, db: DBSession = Depends(get_db), user: User = D
 
 
 @router.post("/{class_id}/messages", response_model=MessageOut, status_code=201)
-def post_message(class_id: int, data: MessageIn, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
+def post_message(class_id: str, data: MessageIn, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
     _limit(chat_limiter, user, "chat")
     lc, role = _member(class_id, user, db)
     _require_live(lc)
@@ -547,7 +550,7 @@ def post_message(class_id: int, data: MessageIn, db: DBSession = Depends(get_db)
     return out
 
 
-def _moderate_message(class_id: int, message_id: int, user: User, db: DBSession, **changes) -> MessageOut:
+def _moderate_message(class_id: str, message_id: int, user: User, db: DBSession, **changes) -> MessageOut:
     lc = _teacher(class_id, user, db)
     m = db.scalar(select(LiveClassMessage).options(selectinload(LiveClassMessage.user))
                   .where(LiveClassMessage.id == message_id, LiveClassMessage.live_class_id == lc.id))
@@ -563,19 +566,19 @@ def _moderate_message(class_id: int, message_id: int, user: User, db: DBSession,
 
 
 @router.post("/{class_id}/messages/{message_id}/answer", response_model=MessageOut)
-def mark_answered(class_id: int, message_id: int, db: DBSession = Depends(get_db),
+def mark_answered(class_id: str, message_id: int, db: DBSession = Depends(get_db),
                   user: User = Depends(require_roles(Role.teacher, Role.admin))):
     return _moderate_message(class_id, message_id, user, db, answered=True)
 
 
 @router.post("/{class_id}/messages/{message_id}/hide", response_model=MessageOut)
-def hide_message(class_id: int, message_id: int, db: DBSession = Depends(get_db),
+def hide_message(class_id: str, message_id: int, db: DBSession = Depends(get_db),
                  user: User = Depends(require_roles(Role.teacher, Role.admin))):
     return _moderate_message(class_id, message_id, user, db, hidden=True)
 
 
 @router.post("/{class_id}/reactions", status_code=204)
-def react(class_id: int, data: ReactionIn, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
+def react(class_id: str, data: ReactionIn, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
     _limit(reaction_limiter, user, "react")
     lc, _role = _member(class_id, user, db)
     _require_live(lc)
@@ -584,7 +587,7 @@ def react(class_id: int, data: ReactionIn, db: DBSession = Depends(get_db), user
 
 
 @router.get("/{class_id}/attendance", response_model=AttendanceOut)
-def attendance(class_id: int, db: DBSession = Depends(get_db),
+def attendance(class_id: str, db: DBSession = Depends(get_db),
                user: User = Depends(require_roles(Role.teacher, Role.admin))):
     lc = _teacher(class_id, user, db)
     now = _now()

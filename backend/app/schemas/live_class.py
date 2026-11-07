@@ -2,6 +2,7 @@ import re
 from datetime import datetime, timezone
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator
+from app.core.refs import CourseIn, CourseOut_
 
 IDENTITY_RE = re.compile(r"^u\d{1,12}$")
 REACTIONS = ("👍", "👏", "❤️", "😂", "😮", "🎉", "🤔", "✋")
@@ -14,7 +15,7 @@ def _utc(v):
 
 
 class LiveClassCreate(BaseModel):
-    course_id: int
+    course_id: CourseIn
     title: str = Field(min_length=2, max_length=160)
     description: str = Field(default="", max_length=5000)
     scheduled_start: datetime | None = None
@@ -51,7 +52,8 @@ class LiveSettingsUpdate(BaseModel):
 
 class LiveClassOut(BaseModel):
     id: int
-    course_id: int
+    ref: str
+    course_id: CourseOut_
     course_title: str
     teacher_name: str
     title: str

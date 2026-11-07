@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session as DBSession
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from app.db.session import get_db
+from app.core.refs import CourseIn, ExamIn
 from app.api.deps import get_current_user, require_roles
 from app.models.user import User, Role
 from app.models.student import Student
@@ -62,7 +63,7 @@ def _exam_out(e: ExamSession, db: DBSession, my_attempt: "ExamAttempt | None" = 
     )
 
 
-def _build_question(exam_id: int, q: QuestionIn, order: int) -> Question:
+def _build_question(exam_id: ExamIn, q: QuestionIn, order: int) -> Question:
     return Question(
         exam_id=exam_id, type=q.type, text=q.text, options=q.options,
         correct_answer=q.correct_answer, marks=q.marks, order=order,
@@ -128,7 +129,7 @@ def create_exam(data: ExamCreate, db: DBSession = Depends(get_db),
 
 
 @router.post("/{exam_id}/publish", response_model=ExamOut)
-def publish_exam(exam_id: int, db: DBSession = Depends(get_db),
+def publish_exam(exam_id: ExamIn, db: DBSession = Depends(get_db),
                   user: User = Depends(require_roles(Role.teacher, Role.admin))):
     exam = db.get(ExamSession, exam_id)
     if not exam:
@@ -142,7 +143,7 @@ def publish_exam(exam_id: int, db: DBSession = Depends(get_db),
 
 
 @router.patch("/{exam_id}", response_model=ExamOut)
-def update_exam(exam_id: int, data: ExamUpdate, db: DBSession = Depends(get_db),
+def update_exam(exam_id: ExamIn, data: ExamUpdate, db: DBSession = Depends(get_db),
                  user: User = Depends(require_roles(Role.teacher, Role.admin))):
     exam = db.get(ExamSession, exam_id)
     if not exam:
@@ -179,7 +180,7 @@ def update_exam(exam_id: int, data: ExamUpdate, db: DBSession = Depends(get_db),
 
 
 @router.delete("/{exam_id}", status_code=204)
-def delete_exam(exam_id: int, db: DBSession = Depends(get_db),
+def delete_exam(exam_id: ExamIn, db: DBSession = Depends(get_db),
                  user: User = Depends(require_roles(Role.teacher, Role.admin))):
     exam = db.get(ExamSession, exam_id)
     if not exam:
@@ -205,7 +206,7 @@ def delete_exam(exam_id: int, db: DBSession = Depends(get_db),
 
 
 @router.get("/course/{course_id}", response_model=list[ExamOut])
-def list_course_exams(course_id: int, db: DBSession = Depends(get_db),
+def list_course_exams(course_id: CourseIn, db: DBSession = Depends(get_db),
                        user: User = Depends(require_roles(Role.teacher, Role.admin))):
     course = db.get(Course, course_id)
     if not course:
@@ -264,7 +265,7 @@ def my_exams(db: DBSession = Depends(get_db), user: User = Depends(require_roles
 
 
 @router.get("/{exam_id}", response_model=ExamOut)
-def get_exam(exam_id: int, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
+def get_exam(exam_id: ExamIn, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
     exam = db.get(ExamSession, exam_id)
     if not exam:
         raise HTTPException(404, "Exam not found")
@@ -276,7 +277,7 @@ def get_exam(exam_id: int, db: DBSession = Depends(get_db), user: User = Depends
 
 
 @router.get("/{exam_id}/questions", response_model=None)
-def get_questions(exam_id: int, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
+def get_questions(exam_id: ExamIn, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
     exam = db.get(ExamSession, exam_id)
     if not exam:
         raise HTTPException(404, "Exam not found")
@@ -332,7 +333,7 @@ def _get_or_create_attempt(exam: ExamSession, prof: Student, db: DBSession) -> E
 
 
 @router.post("/{exam_id}/start", response_model=AttemptOut)
-def start_attempt(exam_id: int, db: DBSession = Depends(get_db),
+def start_attempt(exam_id: ExamIn, db: DBSession = Depends(get_db),
                    user: User = Depends(require_roles(Role.student))):
     exam = db.get(ExamSession, exam_id)
     if not exam:

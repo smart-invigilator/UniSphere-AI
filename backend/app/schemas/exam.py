@@ -2,6 +2,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 from pydantic import BaseModel, Field, field_validator, model_validator
+from app.core.refs import AttemptOut_, CourseIn, CourseOut_, ExamOut_
 from app.services.question_types import QUESTION_TYPES, normalize_question
 
 MEDIA_URL_RE = re.compile(r"^/media/questions/[A-Za-z0-9_\-]+/[A-Za-z0-9_\-]+\.(png|jpg|gif|webp)$")
@@ -84,7 +85,7 @@ class QuestionAnswerKeyOut(QuestionOut):
 
 
 class ExamCreate(BaseModel):
-    course_id: int
+    course_id: CourseIn
     title: str = Field(min_length=2, max_length=160)
     description: str = ""
     duration_minutes: int = Field(default=60, ge=1, le=600)
@@ -135,8 +136,8 @@ class ExamUpdate(BaseModel):
 
 
 class ExamOut(BaseModel):
-    id: int
-    course_id: int
+    id: ExamOut_
+    course_id: CourseOut_
     course_title: str | None = None
     title: str
     description: str
@@ -150,7 +151,7 @@ class ExamOut(BaseModel):
     security: dict
     question_count: int = 0
     created_at: datetime
-    my_attempt_id: int | None = None
+    my_attempt_id: AttemptOut_ | None = None
     my_attempt_status: str | None = None
     my_final_score: float | None = None
     my_auto_score: float | None = None

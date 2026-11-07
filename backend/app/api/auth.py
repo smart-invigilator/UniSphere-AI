@@ -85,6 +85,9 @@ def check_scan_frame(data: ScanFrameCheckIn, request: Request):
 
 @router.post("/register", response_model=TokenOut, status_code=201)
 def register(data: RegisterIn, request: Request, db: DBSession = Depends(get_db)):
+    if data.role == Role.admin:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Admin accounts cannot be created through registration")
+    login_limiter.check(request, "register")
     exists = db.scalar(select(User).where(User.email == data.email))
     if exists:
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")

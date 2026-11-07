@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session as DBSession
 from sqlalchemy import select, func
 from app.db.session import get_db
+from app.core.refs import CourseIn
 from app.api.deps import get_current_user, require_roles
 from app.models.user import User, Role
 from app.models.student import Student
@@ -27,7 +28,7 @@ def _course_out(c: Course, db: DBSession) -> CourseOut:
     )
 
 
-def _get_owned_course(course_id: int, user: User, db: DBSession) -> Course:
+def _get_owned_course(course_id: CourseIn, user: User, db: DBSession) -> Course:
     c = db.get(Course, course_id)
     if not c:
         raise HTTPException(404, "Course not found")
@@ -65,7 +66,7 @@ def my_courses(db: DBSession = Depends(get_db), user: User = Depends(get_current
 
 
 @router.get("/{course_id}", response_model=CourseOut)
-def get_course(course_id: int, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
+def get_course(course_id: CourseIn, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
     c = db.get(Course, course_id)
     if not c:
         raise HTTPException(404, "Course not found")
@@ -82,7 +83,7 @@ def get_course(course_id: int, db: DBSession = Depends(get_db), user: User = Dep
 
 
 @router.get("/{course_id}/roster", response_model=list[RosterStudentOut])
-def roster(course_id: int, db: DBSession = Depends(get_db),
+def roster(course_id: CourseIn, db: DBSession = Depends(get_db),
            user: User = Depends(require_roles(Role.teacher, Role.admin))):
     _get_owned_course(course_id, user, db)
     rows = db.scalars(
@@ -99,7 +100,7 @@ def roster(course_id: int, db: DBSession = Depends(get_db),
 
 
 @router.post("/{course_id}/students", response_model=RosterStudentOut, status_code=201)
-def add_student_by_email(course_id: int, data: EnrollByEmail, db: DBSession = Depends(get_db),
+def add_student_by_email(course_id: CourseIn, data: EnrollByEmail, db: DBSession = Depends(get_db),
                           user: User = Depends(require_roles(Role.teacher, Role.admin))):
     course = _get_owned_course(course_id, user, db)
     target = db.scalar(select(User).where(User.email == data.email))
@@ -119,7 +120,7 @@ def add_student_by_email(course_id: int, data: EnrollByEmail, db: DBSession = De
 
 
 @router.delete("/{course_id}/students/{student_id}", status_code=204)
-def remove_student(course_id: int, student_id: str, db: DBSession = Depends(get_db),
+def remove_student(course_id: CourseIn, student_id: str, db: DBSession = Depends(get_db),
                     user: User = Depends(require_roles(Role.teacher, Role.admin))):
     course = _get_owned_course(course_id, user, db)
     st = db.scalar(select(Student).where(Student.student_id == student_id))

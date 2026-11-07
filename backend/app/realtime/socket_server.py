@@ -36,6 +36,7 @@ import time
 import socketio
 
 from app.core.security import decode_token
+from app.core.refs import ATTEMPT, EXAM, decode_ref, encode_ref
 from app.core.config import settings
 from app.realtime.manager import manager
 from app.realtime.pipeline import pipeline
@@ -51,7 +52,7 @@ logger = logging.getLogger(__name__)
 
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins="*",
+    cors_allowed_origins=settings.cors_list,
     max_http_buffer_size=settings.SOCKET_MAX_MESSAGE_BYTES,
 )
 
@@ -185,7 +186,7 @@ async def dashboard_join(sid, data):
         if payload.get("role") not in ("teacher", "admin"):
             return {"ok": False, "error": "forbidden"}
         user_id = int(payload["sub"])
-        exam_id = int(exam_id)
+        exam_id = decode_ref(EXAM, exam_id)
     except Exception:
         return {"ok": False, "error": "invalid token"}
 
@@ -228,7 +229,7 @@ async def student_join(sid, data):
     try:
         payload = decode_token(token)
         user_id = int(payload["sub"])
-        attempt_id = int(attempt_id)
+        attempt_id = decode_ref(ATTEMPT, attempt_id)
     except Exception:
         return {"ok": False, "error": "invalid token"}
 
@@ -244,7 +245,7 @@ async def student_join(sid, data):
     )
     manager.connect(live.attempt_id, sid)
     ticks.request(live.exam_id)
-    return {"ok": True, "studentId": live.student_id, "examId": live.exam_id}
+    return {"ok": True, "studentId": live.student_id, "examId": encode_ref(EXAM, live.exam_id)}
 
 
 @sio.on("heartbeat")

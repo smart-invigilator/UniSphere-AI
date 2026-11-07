@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session as DBSession
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from app.db.session import get_db
+from app.core.refs import AttemptIn, ExamIn, ATTEMPT, encode_ref
 from app.api.deps import get_current_user, require_roles
 from app.models.user import User, Role
 from app.models.student import Student
@@ -46,14 +47,14 @@ def _attempt_deadline(a: ExamAttempt) -> "datetime | None":
     return started + timedelta(minutes=a.exam.duration_minutes, seconds=DEADLINE_GRACE_SECONDS)
 
 
-def _get_attempt(attempt_id: int, db: DBSession) -> ExamAttempt:
+def _get_attempt(attempt_id: AttemptIn, db: DBSession) -> ExamAttempt:
     a = db.get(ExamAttempt, attempt_id)
     if not a:
         raise HTTPException(404, "Attempt not found")
     return a
 
 
-def _own_attempt(attempt_id: int, user: User, db: DBSession) -> ExamAttempt:
+def _own_attempt(attempt_id: AttemptIn, user: User, db: DBSession) -> ExamAttempt:
     a = _get_attempt(attempt_id, db)
     prof = db.scalar(select(Student).where(Student.user_id == user.id))
     if not prof or a.student_id != prof.id:
@@ -62,7 +63,7 @@ def _own_attempt(attempt_id: int, user: User, db: DBSession) -> ExamAttempt:
 
 
 @router.get("/{attempt_id}", response_model=AttemptOut)
-def get_attempt(attempt_id: int, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
+def get_attempt(attempt_id: AttemptIn, db: DBSession = Depends(get_db), user: User = Depends(get_current_user)):
     a = _get_attempt(attempt_id, db)
     if user.role == Role.student:
         _own_attempt(attempt_id, user, db)
@@ -73,7 +74,7 @@ def get_attempt(attempt_id: int, db: DBSession = Depends(get_db), user: User = D
 
 
 @router.post("/{attempt_id}/checklist/camera", response_model=AttemptOut)
-def check_camera(attempt_id: int, db: DBSession = Depends(get_db),
+def check_camera(attempt_id: AttemptIn, db: DBSession = Depends(get_db),
                   user: User = Depends(require_roles(Role.student))):
     a = _own_attempt(attempt_id, user, db)
     a.camera_ok = True
@@ -83,7 +84,7 @@ def check_camera(attempt_id: int, db: DBSession = Depends(get_db),
 
 
 @router.post("/{attempt_id}/checklist/microphone", response_model=AttemptOut)
-def check_microphone(attempt_id: int, db: DBSession = Depends(get_db),
+def check_microphone(attempt_id: AttemptIn, db: DBSession = Depends(get_db),
                       user: User = Depends(require_roles(Role.student))):
     a = _own_attempt(attempt_id, user, db)
     a.microphone_ok = True
@@ -93,7 +94,7 @@ def check_microphone(attempt_id: int, db: DBSession = Depends(get_db),
 
 
 @router.post("/{attempt_id}/checklist/screen", response_model=AttemptOut)
-def check_screen(attempt_id: int, db: DBSession = Depends(get_db),
+def check_screen(attempt_id: AttemptIn, db: DBSession = Depends(get_db),
                   user: User = Depends(require_roles(Role.student))):
     a = _own_attempt(attempt_id, user, db)
     a.screen_ok = True
@@ -103,7 +104,7 @@ def check_screen(attempt_id: int, db: DBSession = Depends(get_db),
 
 
 @router.post("/{attempt_id}/checklist/enroll-face", response_model=FaceEnrollOut)
-def enroll_face(attempt_id: int, data: FaceEnrollIn, db: DBSession = Depends(get_db),
+def enroll_face(attempt_id: AttemptIn, data: FaceEnrollIn, db: DBSession = Depends(get_db),
                  user: User = Depends(require_roles(Role.student))):
     a = _own_attempt(attempt_id, user, db)
 
@@ -178,7 +179,7 @@ def enroll_face(attempt_id: int, data: FaceEnrollIn, db: DBSession = Depends(get
 
 
 @router.post("/{attempt_id}/checklist/liveness", response_model=LivenessCheckOut)
-def liveness_check(attempt_id: int, data: LivenessCheckIn, db: DBSession = Depends(get_db),
+def liveness_check(attempt_id: AttemptIn, data: LivenessCheckIn, db: DBSession = Depends(get_db),
                     user: User = Depends(require_roles(Role.student))):
     a = _own_attempt(attempt_id, user, db)
 
@@ -219,7 +220,7 @@ def liveness_check(attempt_id: int, data: LivenessCheckIn, db: DBSession = Depen
 
 
 @router.post("/{attempt_id}/checklist/liveness/step", response_model=LivenessStepOut)
-def liveness_step(attempt_id: int, data: LivenessStepIn, db: DBSession = Depends(get_db),
+def liveness_step(attempt_id: AttemptIn, data: LivenessStepIn, db: DBSession = Depends(get_db),
                   user: User = Depends(require_roles(Role.student))):
     _own_attempt(attempt_id, user, db)
 
@@ -256,7 +257,7 @@ def liveness_step(attempt_id: int, data: LivenessStepIn, db: DBSession = Depends
 
 
 @router.post("/{attempt_id}/enter", response_model=AttemptOut)
-def enter_exam(attempt_id: int, db: DBSession = Depends(get_db),
+def enter_exam(attempt_id: AttemptIn, db: DBSession = Depends(get_db),
                 user: User = Depends(require_roles(Role.student))):
     a = _own_attempt(attempt_id, user, db)
     exam = a.exam
@@ -313,7 +314,7 @@ def _validate_response(a: ExamAttempt, q: Question, response: str) -> str:
         max_files = int((q.settings or {}).get("max_files", 1))
         if not isinstance(files, list) or len(files) > max_files:
             raise HTTPException(400, f"You can attach at most {max_files} file(s)")
-        prefix = f"{settings.MEDIA_URL}/answers/{a.id}/{q.id}/"
+        prefix = f"{settings.MEDIA_URL}/answers/{encode_ref(ATTEMPT, a.id)}/{q.id}/"
         for f in files:
             if not isinstance(f, dict) or not str(f.get("url", "")).startswith(prefix):
                 raise HTTPException(400, "Invalid file reference, upload the file again")
@@ -321,7 +322,7 @@ def _validate_response(a: ExamAttempt, q: Question, response: str) -> str:
 
 
 @router.post("/{attempt_id}/answer", response_model=AnswerOut)
-def submit_answer(attempt_id: int, data: AnswerIn, db: DBSession = Depends(get_db),
+def submit_answer(attempt_id: AttemptIn, data: AnswerIn, db: DBSession = Depends(get_db),
                    user: User = Depends(require_roles(Role.student))):
     a = _own_attempt(attempt_id, user, db)
     if a.status != "in_progress":
@@ -368,7 +369,7 @@ def submit_answer(attempt_id: int, data: AnswerIn, db: DBSession = Depends(get_d
 
 
 @router.post("/{attempt_id}/submit", response_model=SubmitExamOut)
-def submit_exam(attempt_id: int, db: DBSession = Depends(get_db),
+def submit_exam(attempt_id: AttemptIn, db: DBSession = Depends(get_db),
                  user: User = Depends(require_roles(Role.student))):
     a = _own_attempt(attempt_id, user, db)
     if a.status != "in_progress":
@@ -415,7 +416,7 @@ def submit_exam(attempt_id: int, db: DBSession = Depends(get_db),
 
 
 @router.get("/exam/{exam_id}", response_model=list[AttemptOut])
-def list_exam_attempts(exam_id: int, db: DBSession = Depends(get_db),
+def list_exam_attempts(exam_id: ExamIn, db: DBSession = Depends(get_db),
                         user: User = Depends(require_roles(Role.teacher, Role.admin))):
     exam = db.get(ExamSession, exam_id)
     if not exam:
@@ -438,16 +439,18 @@ def list_exam_attempts(exam_id: int, db: DBSession = Depends(get_db),
 
 
 @router.get("/{attempt_id}/risk")
-def get_attempt_risk(attempt_id: int, db: DBSession = Depends(get_db),
+def get_attempt_risk(attempt_id: AttemptIn, db: DBSession = Depends(get_db),
                       user: User = Depends(require_roles(Role.teacher, Role.admin))):
     a = _get_attempt(attempt_id, db)
     if a.exam.course.teacher_id != user.id and user.role != Role.admin:
         raise HTTPException(403, "Not your exam")
-    return compute_risk(attempt_id, db)
+    risk = compute_risk(attempt_id, db)
+    risk["attempt_id"] = encode_ref(ATTEMPT, attempt_id)
+    return risk
 
 
 @router.get("/exam/{exam_id}/risk")
-def get_exam_risk(exam_id: int, db: DBSession = Depends(get_db),
+def get_exam_risk(exam_id: ExamIn, db: DBSession = Depends(get_db),
                    user: User = Depends(require_roles(Role.teacher, Role.admin))):
     exam = db.get(ExamSession, exam_id)
     if not exam:
@@ -463,6 +466,7 @@ def get_exam_risk(exam_id: int, db: DBSession = Depends(get_db),
     out = []
     for a in attempts:
         risk = risks[a.id]
+        risk["attempt_id"] = encode_ref(ATTEMPT, a.id)
         risk["student_id"] = a.student.student_id
         risk["student_name"] = a.student.user.name
         out.append(risk)
@@ -470,7 +474,7 @@ def get_exam_risk(exam_id: int, db: DBSession = Depends(get_db),
 
 
 @router.get("/{attempt_id}/identity-log")
-def get_identity_log(attempt_id: int, db: DBSession = Depends(get_db),
+def get_identity_log(attempt_id: AttemptIn, db: DBSession = Depends(get_db),
                       user: User = Depends(get_current_user)):
     a = _get_attempt(attempt_id, db)
     if user.role == Role.student:
@@ -488,7 +492,7 @@ def get_identity_log(attempt_id: int, db: DBSession = Depends(get_db),
 
 
 @router.get("/{attempt_id}/report")
-def get_attempt_report(attempt_id: int, db: DBSession = Depends(get_db),
+def get_attempt_report(attempt_id: AttemptIn, db: DBSession = Depends(get_db),
                         user: User = Depends(require_roles(Role.teacher, Role.admin))):
     a = _get_attempt(attempt_id, db)
     if a.exam.course.teacher_id != user.id and user.role != Role.admin:
@@ -504,7 +508,7 @@ def get_attempt_report(attempt_id: int, db: DBSession = Depends(get_db),
 
 
 @router.get("/{attempt_id}/answers", response_model=list[AnswerOut])
-def list_attempt_answers(attempt_id: int, db: DBSession = Depends(get_db),
+def list_attempt_answers(attempt_id: AttemptIn, db: DBSession = Depends(get_db),
                           user: User = Depends(get_current_user)):
     a = _get_attempt(attempt_id, db)
     if user.role == Role.student:
@@ -516,7 +520,7 @@ def list_attempt_answers(attempt_id: int, db: DBSession = Depends(get_db),
 
 
 @router.get("/{attempt_id}/questions", response_model=list[QuestionAnswerKeyOut])
-def list_submitted_questions(attempt_id: int, db: DBSession = Depends(get_db),
+def list_submitted_questions(attempt_id: AttemptIn, db: DBSession = Depends(get_db),
                              user: User = Depends(get_current_user)):
     a = _get_attempt(attempt_id, db)
     if user.role == Role.student:
@@ -576,7 +580,7 @@ def _recompute_attempt_scores(a: ExamAttempt, db: DBSession) -> None:
         a.status = "submitted"
 
 
-def _gradable_attempt(attempt_id: int, user: User, db: DBSession) -> ExamAttempt:
+def _gradable_attempt(attempt_id: AttemptIn, user: User, db: DBSession) -> ExamAttempt:
     a = _get_attempt(attempt_id, db)
     if a.exam.course.teacher_id != user.id and user.role != Role.admin:
         raise HTTPException(403, "Not your exam")
@@ -586,7 +590,7 @@ def _gradable_attempt(attempt_id: int, user: User, db: DBSession) -> ExamAttempt
 
 
 @router.post("/{attempt_id}/grade/{question_id}", response_model=AnswerOut)
-def grade_short_answer(attempt_id: int, question_id: int, data: GradeShortAnswerIn,
+def grade_short_answer(attempt_id: AttemptIn, question_id: int, data: GradeShortAnswerIn,
                         db: DBSession = Depends(get_db),
                         user: User = Depends(require_roles(Role.teacher, Role.admin))):
     a = _gradable_attempt(attempt_id, user, db)
@@ -598,7 +602,7 @@ def grade_short_answer(attempt_id: int, question_id: int, data: GradeShortAnswer
 
 
 @router.post("/{attempt_id}/grade", response_model=list[AnswerOut])
-def grade_bulk(attempt_id: int, data: BulkGradeIn, db: DBSession = Depends(get_db),
+def grade_bulk(attempt_id: AttemptIn, data: BulkGradeIn, db: DBSession = Depends(get_db),
                user: User = Depends(require_roles(Role.teacher, Role.admin))):
     """Save marks/feedback for many questions of one attempt in a single atomic call."""
     a = _gradable_attempt(attempt_id, user, db)

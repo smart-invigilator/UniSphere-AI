@@ -1,3 +1,4 @@
+from app.core.refs import ATTEMPT, EXAM, encode_ref
 """In-memory registry of live exam sessions.
 
 Source of truth for a teacher's Live Monitoring view; persistent records
@@ -49,8 +50,8 @@ class LiveStudent:
         return {
             "id": self.student_id,
             "db_id": self.db_id,
-            "attemptId": self.attempt_id,
-            "examId": self.exam_id,
+            "attemptId": encode_ref(ATTEMPT, self.attempt_id),
+            "examId": encode_ref(EXAM, self.exam_id),
             "name": self.name,
             "department": self.department,
             "connected": self.connected,

@@ -6,6 +6,8 @@ from app.api.deps import get_current_user, require_roles
 from app.models.user import User, Role
 from app.models.student import Student
 from app.models.alert import Alert
+from app.models.course import Course
+from app.models.enrollment import Enrollment
 from app.schemas.student import StudentOut, StudentUpdate
 from app.realtime.manager import manager
 
@@ -37,7 +39,14 @@ def list_students(
     db: DBSession = Depends(get_db),
     user: User = Depends(require_roles(Role.teacher, Role.admin)),
 ):
-    rows = db.scalars(select(Student)).all()
+    q = select(Student)
+    if user.role != Role.admin:
+        # Teachers only see students enrolled in their own courses.
+        q = q.where(Student.id.in_(
+            select(Enrollment.student_id).join(Course, Enrollment.course_id == Course.id)
+            .where(Course.teacher_id == user.id)
+        ))
+    rows = db.scalars(q).all()
     return _merge_live(rows, db)
 
 
@@ -50,8 +59,16 @@ def get_student(
     st = db.scalar(select(Student).where(Student.student_id == student_id))
     if not st:
         raise HTTPException(404, "Student not found")
-    if user.role == Role.student and st.user_id != user.id:
-        raise HTTPException(403, "Forbidden")
+    if user.role == Role.student:
+        if st.user_id != user.id:
+            raise HTTPException(403, "Forbidden")
+    elif user.role != Role.admin:
+        teaches = db.scalar(
+            select(Enrollment.id).join(Course, Enrollment.course_id == Course.id)
+            .where(Enrollment.student_id == st.id, Course.teacher_id == user.id)
+        )
+        if not teaches:
+            raise HTTPException(403, "Forbidden")
     return _merge_live([st], db)[0]
 
 

@@ -10,7 +10,7 @@ export default function JoinByCode() {
   const [error, setError] = useState(null)
   useEffect(() => {
     api.get(`/live-classes/by-code/${encodeURIComponent(code)}`)
-      .then((lc) => navigate(`/live/${lc.id}`, { replace: true }))
+      .then((lc) => navigate(`/live/${lc.ref}`, { replace: true }))
       .catch((e) => setError(e.status === 403 ? "You can't join this class — it belongs to a course you're not enrolled in." : e.message))
   }, [code, navigate])
   return (

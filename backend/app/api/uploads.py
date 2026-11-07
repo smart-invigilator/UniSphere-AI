@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
 from sqlalchemy.orm import Session as DBSession
 from app.db.session import get_db
+from app.core.refs import AttemptIn, ATTEMPT, encode_ref
 from app.api.deps import require_roles
 from app.api.attempts import _own_attempt, _attempt_deadline
 from app.core.config import settings
@@ -54,7 +55,7 @@ def _sniff(data: bytes) -> tuple[str, str, str]:
     return "image", ext, mime
 
 
-def _store(data: bytes, rel_dir: str, ext: str) -> str:
+def _store(data: bytes, rel_dir: str, ext: str, url_dir: str | None = None) -> str:
     token = secrets.token_hex(16)
     abs_dir = os.path.join(settings.MEDIA_ROOT, *rel_dir.split("/"))
     os.makedirs(abs_dir, exist_ok=True)
@@ -63,7 +64,7 @@ def _store(data: bytes, rel_dir: str, ext: str) -> str:
     with open(tmp_path, "wb") as fh:
         fh.write(data)
     os.replace(tmp_path, final_path)
-    return f"{settings.MEDIA_URL}/{rel_dir}/{token}.{ext}"
+    return f"{settings.MEDIA_URL}/{url_dir or rel_dir}/{token}.{ext}"
 
 
 def _safe_name(name: str | None) -> str:
@@ -84,7 +85,7 @@ def upload_question_media(file: UploadFile = File(...),
 
 
 @router.post("/attempts/{attempt_id}/questions/{question_id}", response_model=MediaUploadOut)
-def upload_answer_file(attempt_id: int, question_id: int, file: UploadFile = File(...),
+def upload_answer_file(attempt_id: AttemptIn, question_id: int, file: UploadFile = File(...),
                        db: DBSession = Depends(get_db), user: User = Depends(require_roles(Role.student))):
     a = _own_attempt(attempt_id, user, db)
     if a.status != "in_progress":
@@ -103,5 +104,6 @@ def upload_answer_file(attempt_id: int, question_id: int, file: UploadFile = Fil
     if accept != "both" and kind != accept:
         raise HTTPException(400, "Only images are accepted for this question." if accept == "image"
                             else "Only PDF files are accepted for this question.")
-    url = _store(data, f"answers/{a.id}/{q.id}", ext)
+    url = _store(data, f"answers/{a.id}/{q.id}", ext,
+                 url_dir=f"answers/{encode_ref(ATTEMPT, a.id)}/{q.id}")
     return MediaUploadOut(url=url, name=_safe_name(file.filename), size=len(data), content_type=mime, kind=kind)

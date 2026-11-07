@@ -2,12 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session as DBSession
 from sqlalchemy import select, func
 from app.db.session import get_db
+from app.core.refs import ExamIn
 from app.api.deps import require_roles
 from app.models.user import Role
 from app.models.alert import Alert
 from app.models.student import Student
 from app.models.exam import ExamSession
 from app.models.attempt import ExamAttempt
+from app.models.course import Course
+from app.models.enrollment import Enrollment
 from app.realtime.manager import manager
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -15,7 +18,7 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 @router.get("/summary")
 def summary(
-    exam_id: int | None = None,
+    exam_id: ExamIn | None = None,
     db: DBSession = Depends(get_db),
     user=Depends(require_roles(Role.teacher, Role.admin)),
 ):
@@ -29,6 +32,13 @@ def summary(
             raise HTTPException(403, "Not your exam")
 
     live = manager.snapshot(exam_id)
+    own_exam_ids = own_student_ids = None
+    if exam_id is None and user.role != Role.admin:
+        # Global view for a teacher is limited to their own courses.
+        own_exam_ids = select(ExamSession.id).join(Course, ExamSession.course_id == Course.id).where(Course.teacher_id == user.id)
+        own_student_ids = select(Enrollment.student_id).join(Course, Enrollment.course_id == Course.id).where(Course.teacher_id == user.id)
+        codes = set(db.scalars(select(Student.student_id).where(Student.id.in_(own_student_ids))).all())
+        live = [s for s in live if s.get("id") in codes]
 
     if exam_id is not None:
         total = db.scalar(select(func.count(ExamAttempt.id)).where(ExamAttempt.exam_id == exam_id)) or 0
@@ -39,9 +49,15 @@ def summary(
             ExamAttempt, Alert.attempt_id == ExamAttempt.id
         ).where(ExamAttempt.exam_id == exam_id).group_by(Alert.alert_type)
     else:
-        total = db.scalar(select(func.count(Student.id))) or 0
-        alert_q = select(func.count(Alert.id))
-        by_type_q = select(Alert.alert_type, func.count(Alert.id)).group_by(Alert.alert_type)
+        if own_exam_ids is not None:
+            total = db.scalar(select(func.count(Student.id)).where(Student.id.in_(own_student_ids))) or 0
+            scope = Alert.attempt_id.in_(select(ExamAttempt.id).where(ExamAttempt.exam_id.in_(own_exam_ids)))
+            alert_q = select(func.count(Alert.id)).where(scope)
+            by_type_q = select(Alert.alert_type, func.count(Alert.id)).where(scope).group_by(Alert.alert_type)
+        else:
+            total = db.scalar(select(func.count(Student.id))) or 0
+            alert_q = select(func.count(Alert.id))
+            by_type_q = select(Alert.alert_type, func.count(Alert.id)).group_by(Alert.alert_type)
 
     active = sum(1 for s in live if s["connected"])
     under_alert = sum(1 for s in live if s["status"] == "alert")

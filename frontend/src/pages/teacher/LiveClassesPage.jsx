@@ -33,7 +33,7 @@ function CreateLiveClass({ open, onClose, courses, onCreated }) {
     setSaving(true)
     try {
       const lc = await api.post('/live-classes', {
-        course_id: Number(form.course_id),
+        course_id: form.course_id,
         title: form.title.trim(),
         description: form.description.trim(),
         start_now: form.start_now,
@@ -89,7 +89,7 @@ function Attendance({ lc, onClose }) {
   useEffect(() => {
     if (!lc) return
     setData(null)
-    api.get(`/live-classes/${lc.id}/attendance`).then(setData).catch((e) => setError(e.message))
+    api.get(`/live-classes/${lc.ref}/attendance`).then(setData).catch((e) => setError(e.message))
   }, [lc])
   return (
     <Modal open={!!lc} onClose={onClose} title={`Attendance — ${lc?.title || ''}`} maxWidth="max-w-2xl">
@@ -139,8 +139,8 @@ export default function LiveClassesPage() {
   const start = async (lc) => {
     setBusy(true)
     try {
-      await api.post(`/live-classes/${lc.id}/start`)
-      navigate(`/live/${lc.id}`)
+      await api.post(`/live-classes/${lc.ref}/start`)
+      navigate(`/live/${lc.ref}`)
     } catch (e) {
       notify.error(e.message || 'Could not start the live class.')
     } finally {
@@ -150,7 +150,7 @@ export default function LiveClassesPage() {
   const cancel = async (lc) => {
     if (!window.confirm(`Cancel "${lc.title}"?`)) return
     try {
-      await api.delete(`/live-classes/${lc.id}`)
+      await api.delete(`/live-classes/${lc.ref}`)
       notify.success('Live class cancelled.')
       load()
     } catch (e) {
@@ -193,7 +193,7 @@ export default function LiveClassesPage() {
         courses={courses}
         onCreated={(lc) => {
           setCreating(false)
-          if (lc.status === 'live') navigate(`/live/${lc.id}`)
+          if (lc.status === 'live') navigate(`/live/${lc.ref}`)
           else {
             notify.success('Live class scheduled successfully.')
             load()

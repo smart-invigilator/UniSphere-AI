@@ -8,7 +8,7 @@ from app.models.user import User, Role
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login-form", auto_error=False)
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: DBSession = Depends(get_db)) -> User:
+def get_user_from_token(token: str | None, db: DBSession) -> User:
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
     try:
@@ -23,6 +23,10 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: DBSession = Depend
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found")
     return user
+
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: DBSession = Depends(get_db)) -> User:
+    return get_user_from_token(token, db)
 
 
 def require_roles(*roles: Role):

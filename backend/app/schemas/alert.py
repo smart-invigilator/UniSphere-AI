@@ -1,11 +1,12 @@
 from datetime import datetime
 from pydantic import BaseModel
+from app.core.refs import AttemptOut_
 
 
 class AlertOut(BaseModel):
     id: int
     student_id: int
-    attempt_id: int | None = None
+    attempt_id: AttemptOut_ | None = None
     alert_type: str
     severity: str
     confidence: float
