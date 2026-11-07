@@ -1,6 +1,6 @@
-// Built-in virtual backgrounds for live classes. Each is a 1280x720 SVG scene
-// (no external image files needed); they are rasterised to PNG on demand
-// because the video processor needs a bitmap.
+// Built-in virtual backgrounds for live classes. SVG scenes and public image
+// assets are rasterised to PNG on demand because the video processor needs a
+// bitmap.
 
 const svg = (body, defs = '') =>
   `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720"><defs>${defs}</defs>${body}</svg>`
@@ -182,6 +182,36 @@ export const BACKGROUNDS = [
        <rect x="800" y="370" width="60" height="60" rx="8" fill="#fff"/><rect x="920" y="380" width="60" height="50" rx="8" fill="#fef3c7"/>`,
     ),
   },
+  {
+    id: 'image-48d1s0',
+    label: 'Purple Panels',
+    imagePath: '/backgrounds/PurplePanels.jpg',
+  },
+  {
+    id: 'image-6los5k',
+    label: 'Botanical Gallery',
+    imagePath: '/backgrounds/BotanicalGallery.jpg',
+  },
+  {
+    id: 'image-7gpx74',
+    label: 'Retro Nook',
+    imagePath: '/backgrounds/RetroNook.jpg',
+  },
+  {
+    id: 'image-f9a4cw',
+    label: 'Zen Tatami',
+    imagePath: '/backgrounds/ZenTatami.jpg',
+  },
+  {
+    id: 'image-wz7ja1',
+    label: 'RGB Noir',
+    imagePath: '/backgrounds/RgbNoir.jpg',
+  },
+  {
+    id: 'image-zdukd1',
+    label: 'Natural Study',
+    imagePath: '/backgrounds/NaturalStudy.jpg',
+  },
 ]
 
 export const BLUR_OPTION = { id: 'blur', label: 'Blur' }
@@ -191,7 +221,7 @@ export const svgToDataUrl = (markup) => `data:image/svg+xml;charset=utf-8,${enco
 
 const rasterCache = new Map()
 
-// The segmentation processor needs a regular bitmap; rasterise the SVG once and reuse it.
+// The segmentation processor needs a regular bitmap; rasterise each background once and reuse it.
 export function rasterizeBackground(id) {
   const bg = BACKGROUNDS.find((b) => b.id === id)
   if (!bg) return Promise.reject(new Error('Unknown background'))
@@ -206,7 +236,7 @@ export function rasterizeBackground(id) {
         canvas.toBlob((blob) => (blob ? resolve(URL.createObjectURL(blob)) : reject(new Error('Could not prepare background'))), 'image/png')
       }
       img.onerror = () => reject(new Error('Could not load background'))
-      img.src = svgToDataUrl(bg.svg)
+      img.src = bg.imagePath || svgToDataUrl(bg.svg)
     }))
   }
   return rasterCache.get(id)

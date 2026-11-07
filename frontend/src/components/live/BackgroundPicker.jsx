@@ -48,7 +48,7 @@ export default function BackgroundPicker({ open, onClose, choice, onSelect, busy
           </Option>
           {BACKGROUNDS.map((b) => (
             <Option key={b.id} label={b.label} selected={choice === b.id} onClick={() => onSelect(b.id)} testId={`bg-${b.id}`}>
-              <img src={svgToDataUrl(b.svg)} alt="" className="h-full w-full object-cover" loading="lazy" draggable={false} />
+              <img src={b.imagePath || svgToDataUrl(b.svg)} alt="" className="h-full w-full object-cover" loading="lazy" draggable={false} />
             </Option>
           ))}
         </div>
