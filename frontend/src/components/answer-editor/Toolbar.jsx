@@ -40,7 +40,7 @@ function InsertBtn({ onClick, disabled, label, icon: Icon, testId }) {
 
 const Sep = () => <span className="ae-tb-sep" aria-hidden="true" />
 
-export default function Toolbar({ editor, allowed }) {
+export default function Toolbar({ editor, allowed, variant = 'full', extra = null }) {
   const [tableForm, setTableForm] = useState(null)
   if (!editor) return null
   const inTable = editor.isActive('table')
@@ -52,9 +52,11 @@ export default function Toolbar({ editor, allowed }) {
   }
 
   const level = [1, 2, 3].find((l) => editor.isActive('heading', { level: l }))
+  const simple = variant === 'simple'
 
   return (
     <div className="ae-toolbar" role="toolbar" aria-label="Answer formatting">
+      {!simple && (
       <div className="ae-tb-row">
         <Btn label="Undo (Ctrl+Z)" onClick={() => chain().undo().run()} disabled={!editor.can().undo()}><Undo2 className="h-4 w-4" /></Btn>
         <Btn label="Redo (Ctrl+Shift+Z)" onClick={() => chain().redo().run()} disabled={!editor.can().redo()}><Redo2 className="h-4 w-4" /></Btn>
@@ -78,14 +80,29 @@ export default function Toolbar({ editor, allowed }) {
         <Btn label="Align center" active={editor.isActive({ textAlign: 'center' })} onClick={() => chain().setTextAlign('center').run()}><AlignCenter className="h-4 w-4" /></Btn>
         <Btn label="Align right" active={editor.isActive({ textAlign: 'right' })} onClick={() => chain().setTextAlign('right').run()}><AlignRight className="h-4 w-4" /></Btn>
       </div>
+      )}
 
       {allowed.length > 0 && (
-        <div className="ae-tb-row ae-insert-row" role="group" aria-label="Insert into answer">
-          <span className="ae-insert-label">Insert:</span>
+        <div className={`ae-tb-row ${simple ? 'ae-simple-row' : 'ae-insert-row'}`} role="group" aria-label="Insert into answer">
+          {simple ? (
+            <>
+              <Btn label="Undo (Ctrl+Z)" onClick={() => chain().undo().run()} disabled={!editor.can().undo()}><Undo2 className="h-4 w-4" /></Btn>
+              <Btn label="Redo (Ctrl+Shift+Z)" onClick={() => chain().redo().run()} disabled={!editor.can().redo()}><Redo2 className="h-4 w-4" /></Btn>
+              <Sep />
+              <Btn label="Heading 1" active={level === 1} onClick={() => chain().toggleHeading({ level: 1 }).run()}><Heading1 className="h-4 w-4" /></Btn>
+              <Btn label="Heading 2" active={level === 2} onClick={() => chain().toggleHeading({ level: 2 }).run()}><Heading2 className="h-4 w-4" /></Btn>
+              <Btn label="Bullet list" active={editor.isActive('bulletList')} onClick={() => chain().toggleBulletList().run()}><List className="h-4 w-4" /></Btn>
+              <Btn label="Numbered list" active={editor.isActive('orderedList')} onClick={() => chain().toggleOrderedList().run()}><ListOrdered className="h-4 w-4" /></Btn>
+              <Sep />
+              <span className="ae-insert-label">Add:</span>
+            </>
+          ) : (
+            <span className="ae-insert-label">Insert:</span>
+          )}
           {can('math') && (
             <>
-              <InsertBtn testId="insert-math-inline" label="Inline equation" icon={Sigma} onClick={() => chain().insertContent({ type: 'mathInline', attrs: { latex: '' } }).run()} />
-              <InsertBtn testId="insert-math-block" label="Display equation" icon={SquareFunction} onClick={() => insertBlock({ type: 'mathBlock', attrs: { latex: '' } })} />
+              <InsertBtn testId="insert-math-inline" label={simple ? 'Equation' : 'Inline equation'} icon={Sigma} onClick={() => chain().insertContent({ type: 'mathInline', attrs: { latex: '' } }).run()} />
+              {!simple && <InsertBtn testId="insert-math-block" label="Display equation" icon={SquareFunction} onClick={() => insertBlock({ type: 'mathBlock', attrs: { latex: '' } })} />}
             </>
           )}
           {can('code') && <InsertBtn testId="insert-code" label="Code" icon={Code2} disabled={inTable} onClick={() => insertBlock({ type: 'codeBlock', attrs: { language: 'python', code: '' } })} />}
@@ -114,6 +131,12 @@ export default function Toolbar({ editor, allowed }) {
                 </div>
               )}
             </span>
+          )}
+          {extra && (
+            <>
+              <Sep />
+              {extra(editor)}
+            </>
           )}
         </div>
       )}

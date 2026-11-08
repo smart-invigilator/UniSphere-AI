@@ -1,4 +1,4 @@
-import { COMPONENTS, isDocEmpty, parseAnswer, serializeAnswer, usesUnifiedEditor } from '../answer-editor/schema'
+import { COMPONENTS, EMPTY_TEXT_PLACEHOLDER, isDocEmpty, parseAnswer, serializeAnswer, usesUnifiedEditor } from '../answer-editor/schema'
 
 export { usesUnifiedEditor }
 
@@ -107,7 +107,7 @@ export function questionFromApi(q) {
   const { rich_content: richRaw, ...restSettings } = s
   const out = {
     ...base,
-    text: q.text,
+    text: String(q.text ?? '').split(EMPTY_TEXT_PLACEHOLDER).join(''),
     marks: q.marks,
     media: q.media || [],
     settings: { ...base.settings, ...restSettings },
@@ -159,9 +159,10 @@ const trimList = (list) => (list || []).map((x) => String(x ?? '').trim())
 
 export function questionToPayload(q) {
   const marks = q.type === 'text_block' ? 0 : Number(q.marks)
+  const hasRich = !!q.richContent && !isDocEmpty(q.richContent)
   const p = {
     type: q.type,
-    text: q.text,
+    text: q.text.trim() || !hasRich ? q.text : EMPTY_TEXT_PLACEHOLDER,
     marks,
     media: (q.media || []).map((m) => ({ url: m.url, name: m.name || '', caption: m.caption || '' })),
     options: null,
@@ -243,6 +244,62 @@ export function questionToPayload(q) {
   return p
 }
 
+/** The question as a student would receive it — used for the teacher's preview. */
+export function previewQuestion(q) {
+  const p = questionToPayload(q)
+  const k = p.answer_key || {}
+  const s = p.settings || {}
+  const settings = {}
+  switch (q.type) {
+    case 'multi':
+      settings.partial_credit = s.partial_credit
+      break
+    case 'short':
+    case 'essay':
+      settings.allowed_components = s.allowed_components
+      settings.word_limit = s.word_limit
+      break
+    case 'fill_blank':
+      settings.blank_count = Math.max(placeholderCount(q.text), 1)
+      break
+    case 'dropdown':
+      settings.dropdowns = s.dropdowns
+      break
+    case 'numeric':
+      settings.unit = s.unit
+      break
+    case 'matrix':
+      settings.rows = s.rows
+      settings.cols = s.cols
+      break
+    case 'matching': {
+      const pairs = k.pairs || []
+      settings.prompts = pairs.map((x) => x.prompt)
+      settings.choices = [...new Set([...pairs.map((x) => x.answer), ...(s.distractors || [])].filter(Boolean))]
+      break
+    }
+    case 'ordering':
+      settings.items = (k.order || []).filter(Boolean)
+      break
+    case 'file_upload':
+      settings.accept = s.accept
+      settings.max_files = s.max_files
+      break
+    default:
+      break
+  }
+  if (s.rich_content) settings.rich_content = s.rich_content
+  return {
+    id: q.localId,
+    type: q.type,
+    text: p.text === EMPTY_TEXT_PLACEHOLDER ? '' : p.text,
+    marks: p.marks,
+    media: p.media,
+    options: (p.options || []).filter((o) => o !== ''),
+    settings,
+  }
+}
+
 export const MARKS_MIN = 1
 export const MARKS_MAX = 1000
 
@@ -269,7 +326,7 @@ export function gradeMarksError(value, max) {
 const hasDupes = (list) => new Set(list.map((x) => x.toLowerCase())).size !== list.length
 
 export function validateQuestion(q) {
-  if (!q.text.trim()) return 'Question text is required.'
+  if (!q.text.trim() && !(q.richContent && !isDocEmpty(q.richContent))) return 'Please write the question.'
   if (q.type !== 'text_block') {
     const m = marksError(q.marks)
     if (m) return m

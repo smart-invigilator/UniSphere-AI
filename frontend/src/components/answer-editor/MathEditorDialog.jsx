@@ -157,10 +157,10 @@ export default function MathEditorDialog({ initialLatex, display, onSave, onCanc
         aria-modal="true"
         aria-label={display ? 'Edit display equation' : 'Edit inline equation'}
         onKeyDown={onKeyDown}
-        className="w-full max-w-2xl rounded-2xl outline-none border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+        className="ae-dialog w-full max-w-2xl rounded-2xl outline-none border border-slate-200 bg-white p-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
       >
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-sm font-bold text-slate-900 dark:text-white">{display ? 'Display equation' : 'Inline equation'}</h2>
+          <h2 className="text-sm font-bold text-slate-900 dark:text-white">{display ? 'Display equation' : 'Equation'}</h2>
           <button type="button" onClick={onCancel} aria-label="Close" className="rounded p-1 text-slate-400 hover:text-slate-700">
             <X className="h-4 w-4" />
           </button>
@@ -207,7 +207,7 @@ export default function MathEditorDialog({ initialLatex, display, onSave, onCanc
           className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 font-mono text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-white"
         />
 
-        <div className="mt-2 min-h-[2.5rem] overflow-x-auto rounded-lg border border-dashed border-slate-200 px-3 py-2 dark:border-slate-700" aria-live="polite">
+        <div className="ae-dialog-preview mt-2 min-h-[2.5rem] overflow-x-auto rounded-lg border border-dashed border-slate-200 px-3 py-2 dark:border-slate-700" aria-live="polite">
           {!preview ? (
             <span className="text-xs text-slate-400">Preview appears here</span>
           ) : preview.error ? (

@@ -40,6 +40,9 @@ export default function UnifiedAnswerEditor({
   saveStatus = 'idle',
   saveError = null,
   ariaLabel = 'Answer editor',
+  variant = 'full',
+  toolbarExtra = null,
+  showFooter = true,
 }) {
   const allowed = useMemo(() => normalizeAllowed(allowedComponents), [JSON.stringify(allowedComponents ?? null)])
   const onChangeRef = useRef(onChange)
@@ -109,8 +112,9 @@ export default function UnifiedAnswerEditor({
 
   return (
     <div className={`ae-shell ${readOnly ? 'ae-readonly' : ''}`} data-testid="unified-editor">
-      {!readOnly && <Toolbar editor={editor} allowed={allowed} />}
+      {!readOnly && <Toolbar editor={editor} allowed={allowed} variant={variant} extra={toolbarExtra} />}
       <EditorContent editor={editor} className="ae-content" />
+      {showFooter && (
       <div className="ae-footer">
         <span className={wordLimit && words > wordLimit ? 'font-semibold text-rose-600' : ''}>
           {words} word{words === 1 ? '' : 's'}{wordLimit ? ` / ${wordLimit}` : ''}
@@ -118,6 +122,7 @@ export default function UnifiedAnswerEditor({
         {sizeWarning.current && <span className="text-rose-600">This answer is too large to save — remove some content.</span>}
         <SaveStatus status={saveStatus} error={saveError} />
       </div>
+      )}
     </div>
   )
 }

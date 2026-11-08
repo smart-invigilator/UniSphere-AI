@@ -81,5 +81,16 @@
 .ae-footer { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; border-top: 1px solid rgb(241 245 249); padding: 0.35rem 0.75rem; font-size: 11px; color: rgb(148 163 184); }
 .dark .ae-footer { border-color: rgb(30 41 59); }
 .ae-readonly .ae-footer { display: none; }
-.ae-mathfield { display: block; width: 100%; min-height: 2.5rem; border: none; outline: none; }
+.ae-mathfield { display: block; width: 100%; min-height: 2.5rem; border: none; outline: none; background: transparent; color: rgb(15 23 42); --text-font-family: inherit; }
+.dark .ae-mathfield { color: rgb(241 245 249); }
+.ae-dialog { color-scheme: light; color: rgb(15 23 42); }
+.dark .ae-dialog { color-scheme: dark; color: rgb(241 245 249); }
+.ae-dialog textarea { background: rgb(248 250 252); color: rgb(15 23 42); }
+.dark .ae-dialog textarea { background: rgb(30 41 59); color: rgb(241 245 249); }
+.ae-dialog-preview { color: rgb(15 23 42); }
+.dark .ae-dialog-preview { color: rgb(241 245 249); }
 .ae-prose .ae-code .cm-content, .ae-prose .ae-code .cm-line { white-space: pre; tab-size: 4; -moz-tab-size: 4; }
+/* Simplified toolbar used when a teacher writes a question */
+.ae-simple-row { gap: 0.35rem; padding: 0.1rem 0.15rem; }
+.ae-simple-row .ae-insert-btn { padding: 0.3rem 0.75rem; font-size: 12px; }
+.ae-question-shell .ae-prose { min-height: 9rem; font-size: 0.95rem; }

@@ -153,3 +153,50 @@ describe('answer document model', () => {
     expect(e.getJSON().content[4].content[0].text).toBe('0')
   })
 })
+import { combineQuestionDoc as _combine, splitQuestionDoc as _split } from '../schema'
+
+describe('single-field question body', () => {
+  it('keeps plain text and inline math in text, and puts everything from the first table onward in richContent', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'Find ' }, { type: 'mathInline', attrs: { latex: 'x^2' } }] },
+        { type: 'table', content: [] },
+        { type: 'paragraph', content: [{ type: 'text', text: 'Then explain.' }] },
+      ],
+    }
+    const { text, richContent } = _split(doc)
+    expect(text).toBe('Find $x^2$')
+    expect(richContent.content.map((n) => n.type)).toEqual(['table', 'paragraph'])
+    expect(_combine(text, richContent).content.map((n) => n.type)).toEqual(['paragraph', 'table', 'paragraph'])
+  })
+
+  it('has no richContent for text-only questions and survives a round trip', () => {
+    const { text, richContent } = _split(_combine('Line one\n\nLine $a$ two', null))
+    expect(richContent).toBeNull()
+    expect(text).toBe('Line one\n\nLine $a$ two')
+  })
+
+  it('handles a question that starts with a diagram', () => {
+    const doc = { type: 'doc', content: [{ type: 'diagram', attrs: { scene: { elements: [], appState: {} } } }] }
+    const { text, richContent } = _split(doc)
+    expect(text).toBe('')
+    expect(richContent.content[0].type).toBe('diagram')
+  })
+})
+
+describe('formatted question bodies', () => {
+  it('keeps headings and lists (and everything after them) in richContent', () => {
+    const doc = {
+      type: 'doc',
+      content: [
+        { type: 'paragraph', content: [{ type: 'text', text: 'Intro' }] },
+        { type: 'heading', attrs: { level: 1 }, content: [{ type: 'text', text: 'Part A' }] },
+        { type: 'bulletList', content: [{ type: 'listItem', content: [{ type: 'paragraph', content: [{ type: 'text', text: 'one' }] }] }] },
+      ],
+    }
+    const { text, richContent } = _split(doc)
+    expect(text).toBe('Intro')
+    expect(richContent.content.map((n) => n.type)).toEqual(['heading', 'bulletList'])
+  })
+})

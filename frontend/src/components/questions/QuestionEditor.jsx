@@ -1,13 +1,13 @@
 import { useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, Plus, Trash2, X, AlertCircle, LayoutPanelTop } from 'lucide-react'
+import { ArrowDown, ArrowUp, Plus, Trash2, X, AlertCircle, Eye, EyeOff, Lightbulb } from 'lucide-react'
 import MathInput from '../math/MathInput'
 import MathText from '../math/MathText'
 import { MediaManager } from './QuestionMedia'
 import { api } from '../../services/api'
-import { TYPE_MAP, placeholderCount, resizeMatrix, marksError, MARKS_MIN, MARKS_MAX } from './questionTypes'
+import QuestionRenderer from './QuestionRenderer'
+import { TYPE_MAP, placeholderCount, resizeMatrix, marksError, previewQuestion, MARKS_MIN, MARKS_MAX } from './questionTypes'
 import UnifiedAnswerEditor from '../answer-editor/UnifiedAnswerEditor'
-import { emptyDoc } from '../answer-editor/schema'
-import { COMPONENTS, COMPONENT_LABELS } from '../answer-editor/schema'
+import { COMPONENTS, COMPONENT_LABELS, combineQuestionDoc, splitQuestionDoc } from '../answer-editor/schema'
 
 const inputCls =
   'w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs focus:border-brand-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-white'
@@ -260,7 +260,7 @@ function TypeBody({ q, onChange }) {
       return (
         <div className="space-y-2">
           <p className={labelCls}>Accepted answers per blank — separate alternatives with |</p>
-          {q.blankText.length === 0 && <p className="text-xs text-amber-600">Add [[1]] to the question text where the blank should appear.</p>}
+          {q.blankText.length === 0 && <p className="text-xs text-amber-600">Click the Blank button in the question toolbar where the blank should appear.</p>}
           {q.blankText.map((t, i) => (
             <div key={i} className="flex items-center gap-2">
               <span className="w-16 shrink-0 text-[11px] font-semibold text-slate-500">Blank {i + 1}</span>
@@ -281,7 +281,7 @@ function TypeBody({ q, onChange }) {
     case 'dropdown':
       return (
         <div className="space-y-3">
-          {q.dropdowns.length === 0 && <p className="text-xs text-amber-600">Add [[1]] to the question text where the dropdown should appear.</p>}
+          {q.dropdowns.length === 0 && <p className="text-xs text-amber-600">Click the Dropdown button in the question toolbar where the dropdown should appear.</p>}
           {q.dropdowns.map((d, di) => {
             const setD = (patch) => onChange({ dropdowns: q.dropdowns.map((x, idx) => (idx === di ? { ...x, ...patch } : x)) })
             return (
@@ -506,14 +506,72 @@ function TypeBody({ q, onChange }) {
   }
 }
 
+export function QuestionPreview({ q, className = '' }) {
+  const noop = () => {}
+  return (
+    <div className={className} data-testid="question-preview">
+      <QuestionRenderer question={previewQuestion(q)} value={undefined} onChange={noop} disabled />
+    </div>
+  )
+}
+
+/** One field for the whole question: text, equations, tables, diagrams and code. */
+function QuestionBody({ q, onChange }) {
+  // Held locally so typing never resets the cursor; the question keeps the split text/richContent form.
+  const [doc, setDoc] = useState(() => combineQuestionDoc(q.text, q.richContent))
+  const usesPlaceholders = q.type === 'fill_blank' || q.type === 'dropdown'
+  const isInfo = q.type === 'text_block'
+
+  const handle = (next) => {
+    setDoc(next)
+    const { text, richContent } = splitQuestionDoc(next)
+    onChange({ text, richContent })
+  }
+
+  const blankButton = usesPlaceholders
+    ? (editor) => (
+        <button
+          type="button"
+          data-testid="insert-placeholder"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            const n = placeholderCount(splitQuestionDoc(editor.getJSON()).text) + 1
+            editor.chain().focus().insertContent(`[[${n}]]`).run()
+          }}
+          className="ae-insert-btn"
+        >
+          <Plus className="h-3.5 w-3.5" /> {q.type === 'dropdown' ? 'Dropdown' : 'Blank'}
+        </button>
+      )
+    : null
+
+  return (
+    <div className="space-y-1.5" data-testid="question-body">
+      <UnifiedAnswerEditor
+        key={`qb-${q.localId}`}
+        variant="simple"
+        showFooter={false}
+        value={doc}
+        onChange={handle}
+        toolbarExtra={blankButton}
+        placeholder={isInfo ? 'Write the instructions or reading passage…' : 'Type your question here…'}
+        ariaLabel="Question"
+      />
+      <p className="flex items-start gap-1.5 text-[11px] text-slate-400">
+        <Lightbulb className="mt-0.5 h-3 w-3 shrink-0" />
+        <span>
+          Click where you want something to appear, then use <b>Add</b> above: Equation, Table, Diagram or Code.
+          Quick tip: typing <code className="rounded bg-slate-100 px-1 dark:bg-slate-800">$x^2$</code> turns into an equation.
+          {usesPlaceholders && <> Use <b>{q.type === 'dropdown' ? 'Dropdown' : 'Blank'}</b> to mark where students answer.</>}
+        </span>
+      </p>
+    </div>
+  )
+}
+
 export default function QuestionEditor({ q, index, total, onChange, onRemove, onMove, error }) {
   const meta = TYPE_MAP[q.type]
-  const usesPlaceholders = q.type === 'fill_blank' || q.type === 'dropdown'
-  const insertPlaceholder = () => {
-    const n = placeholderCount(q.text) + 1
-    const sep = q.text && !q.text.endsWith(' ') ? ' ' : ''
-    onChange({ text: `${q.text}${sep}[[${n}]]` })
-  }
+  const [showPreview, setShowPreview] = useState(false)
   return (
     <div className={`rounded-lg border p-3 ${error ? 'border-rose-300 dark:border-rose-500/40' : 'border-slate-200 dark:border-slate-800'}`}>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -546,57 +604,13 @@ export default function QuestionEditor({ q, index, total, onChange, onRemove, on
       </div>
 
       <div className="mt-2">
-        <MathInput
-          mode="rich"
-          rows={q.type === 'text_block' ? 5 : 3}
-          value={q.text}
-          onChange={(v) => onChange({ text: v })}
-          placeholder={
-            q.type === 'text_block'
-              ? 'Instructions or reading passage…'
-              : 'Question text… use $...$ for inline math, e.g. $\\forall x \\in A$'
-          }
-          maxLength={20000}
-        />
-        {usesPlaceholders && (
-          <button type="button" onClick={insertPlaceholder} className="mt-1 inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 hover:underline">
-            <Plus className="h-3 w-3" /> Insert {q.type === 'dropdown' ? 'dropdown' : 'blank'} [[{placeholderCount(q.text) + 1}]]
-          </button>
-        )}
+        <p className={`${labelCls} mb-1`}>{q.type === 'text_block' ? 'Instructions' : 'Question'}</p>
+        <QuestionBody q={q} onChange={onChange} />
       </div>
 
       {q.type !== 'text_block' && marksError(q.marks) && (
         <p className="mt-1 text-right text-[11px] font-medium text-rose-600" role="alert">{marksError(q.marks)}</p>
       )}
-
-      <div className="mt-3">
-        {q.richContent ? (
-          <div className="space-y-1.5" data-testid="question-rich-content">
-            <div className="flex items-center justify-between">
-              <p className={labelCls}>Question content — tables, diagrams, equations, code (shown to students read-only)</p>
-              <button type="button" onClick={() => onChange({ richContent: null })} className="text-[11px] font-semibold text-rose-600 hover:underline">
-                Remove
-              </button>
-            </div>
-            <UnifiedAnswerEditor
-              key={`qc-${q.localId}`}
-              value={q.richContent}
-              onChange={(doc) => onChange({ richContent: doc })}
-              placeholder="Add reference material or hints: draw a diagram, insert a table, write equations or code…"
-              ariaLabel={`Supporting content for question ${index + 1}`}
-            />
-          </div>
-        ) : (
-          <button
-            type="button"
-            data-testid="add-question-content"
-            onClick={() => onChange({ richContent: emptyDoc() })}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-1.5 text-[11px] font-semibold text-slate-600 hover:border-brand-400 hover:text-brand-700 dark:border-slate-600 dark:text-slate-300"
-          >
-            <LayoutPanelTop className="h-3.5 w-3.5" /> Add tables, diagrams, equations or code
-          </button>
-        )}
-      </div>
 
       <div className="mt-3">
         <MediaManager
@@ -608,6 +622,24 @@ export default function QuestionEditor({ q, index, total, onChange, onRemove, on
 
       <div className="mt-3">
         <TypeBody q={q} onChange={onChange} />
+      </div>
+
+      <div className="mt-3 border-t border-slate-100 pt-2 dark:border-slate-800">
+        <button
+          type="button"
+          data-testid="toggle-preview"
+          onClick={() => setShowPreview((v) => !v)}
+          className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-500/10"
+        >
+          {showPreview ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          {showPreview ? 'Hide preview' : 'Preview as student'}
+        </button>
+        {showPreview && (
+          <div className="mt-2 rounded-xl border border-dashed border-brand-300 bg-white p-4 dark:border-brand-500/40 dark:bg-slate-900">
+            <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-brand-600">This is what students will see</p>
+            <QuestionPreview q={q} />
+          </div>
+        )}
       </div>
 
       {error && (

@@ -19,6 +19,7 @@ import {
   ArrowUp,
   ArrowDown,
   Trash2,
+  Eye,
 } from "lucide-react";
 import { useExams } from "../../context/ExamContext";
 import { useNotify } from "../../context/NotifyContext";
@@ -26,7 +27,8 @@ import { api } from "../../services/api";
 import { Stepper } from "../../components/common/ProgressBar";
 import Button from "../../components/common/Button";
 import Modal from "../../components/common/Modal";
-import QuestionEditor from "../../components/questions/QuestionEditor";
+import { docPlainText } from "../../components/answer-editor/schema";
+import QuestionEditor, { QuestionPreview } from "../../components/questions/QuestionEditor";
 import { DatePicker, TimePicker } from "../../components/common/DateTimePickers";
 import {
   browserTimeZone,
@@ -100,6 +102,7 @@ export default function CreateExam() {
   const isEditing = !!editId;
 
   const [step, setStep] = useState(0);
+  const [previewAllOpen, setPreviewAllOpen] = useState(false);
   const [exam, setExam] = useState(blankExam());
   const [saving, setSaving] = useState(false);
   const [result, setResult] = useState(null);
@@ -721,13 +724,25 @@ export default function CreateExam() {
           Back
         </Button>
         {step < STEPS.length - 1 ? (
-          <Button
-            iconRight={ArrowRight}
-            onClick={next}
-            disabled={!canProceed()}
-          >
-            Continue
-          </Button>
+          <div className="flex items-center gap-2">
+            {step === 4 && exam.questions.length > 0 && (
+              <Button
+                variant="outline"
+                icon={Eye}
+                data-testid="preview-all-questions"
+                onClick={() => setPreviewAllOpen(true)}
+              >
+                Preview all questions
+              </Button>
+            )}
+            <Button
+              iconRight={ArrowRight}
+              onClick={next}
+              disabled={!canProceed()}
+            >
+              Continue
+            </Button>
+          </div>
         ) : (
           <div className="flex gap-2">
             <Button
@@ -753,6 +768,51 @@ export default function CreateExam() {
           </div>
         )}
       </div>
+
+      <Modal
+        open={previewAllOpen}
+        onClose={() => setPreviewAllOpen(false)}
+        title={`Preview all questions (${exam.questions.length})`}
+        maxWidth="max-w-3xl"
+        footer={<Button onClick={() => setPreviewAllOpen(false)}>Close preview</Button>}
+      >
+        <div className="max-h-[65vh] space-y-4 overflow-y-auto pr-1" data-testid="preview-all-modal">
+          <p className="rounded-lg bg-brand-50 px-3 py-2 text-xs text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">
+            This is exactly how students will see the exam. Close this window to keep editing.
+          </p>
+          {exam.questions.map((q, i) => {
+            const err = questionErrors[q.localId];
+            return (
+              <section
+                key={q.localId}
+                className={`rounded-xl border p-4 ${err ? "border-rose-300 dark:border-rose-500/40" : "border-slate-200 dark:border-slate-700"}`}
+              >
+                <header className="mb-3 flex items-center justify-between gap-2 text-xs">
+                  <span className="font-bold uppercase tracking-wide text-brand-600">
+                    Question {i + 1} · {typeLabel(q.type)}
+                  </span>
+                  {q.type !== "text_block" && (
+                    <span className="font-semibold text-slate-500">{q.marks || 0} marks</span>
+                  )}
+                </header>
+                <QuestionPreview q={q} />
+                {err && (
+                  <p className="mt-2 flex items-center gap-1 text-[11px] font-medium text-rose-600">
+                    <AlertCircle className="h-3.5 w-3.5" /> Needs attention: {err}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setPreviewAllOpen(false); openQuestion(q.localId); }}
+                  className="mt-2 text-[11px] font-semibold text-brand-600 hover:underline"
+                >
+                  Edit this question
+                </button>
+              </section>
+            );
+          })}
+        </div>
+      </Modal>
 
       <Modal
         open={!!result}
@@ -833,7 +893,7 @@ function QuestionList({ questions, errors, activeId, onOpen, onMove, onRemove, r
                 className="min-w-0 flex-1 text-left disabled:cursor-default"
               >
                 <span className="block truncate font-medium text-slate-800 dark:text-slate-100">
-                  {q.text.trim() || <span className="italic text-slate-400">Untitled question</span>}
+                  {q.text.trim() || (q.richContent && docPlainText(q.richContent).trim() ? docPlainText(q.richContent).trim() : q.richContent ? <span className="italic text-slate-500">Question with table, diagram or equation</span> : <span className="italic text-slate-400">Untitled question</span>)}
                 </span>
                 <span className="text-[11px] text-slate-400">
                   {typeLabel(q.type)}

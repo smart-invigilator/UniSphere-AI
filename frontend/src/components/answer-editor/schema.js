@@ -129,6 +129,68 @@ export function docPlainText(doc) {
   return parts.join('')
 }
 
+/* ---- Single-field question body -------------------------------------------------
+ * The teacher writes one document. It is stored in the two existing fields so the
+ * server and the student/grading views keep working unchanged:
+ *   text         = everything before the first table / diagram / code / display equation
+ *   richContent  = that block and everything after it (order is preserved)
+ */
+const RICH_BLOCKS = new Set(['table', 'diagram', 'codeBlock', 'mathBlock'])
+const ZERO_WIDTH = '​'
+
+const FORMATTED_BLOCKS = new Set(['heading', 'bulletList', 'orderedList', 'blockquote', 'horizontalRule'])
+
+// A block that plain text cannot hold: tables/diagrams/code/display equations, headings, lists, marks, alignment.
+function containsRichBlock(node) {
+  let found = false
+  walkDoc(node, (n) => {
+    if (RICH_BLOCKS.has(n.type) || FORMATTED_BLOCKS.has(n.type)) found = true
+    if (n.type === 'text' && n.marks?.length) found = true
+    if (n.type === 'paragraph' && n.attrs?.textAlign && n.attrs.textAlign !== 'left') found = true
+  })
+  return found
+}
+
+function nodeToText(node) {
+  if (!node) return ''
+  switch (node.type) {
+    case 'text':
+      return node.text || ''
+    case 'hardBreak':
+      return '\n'
+    case 'mathInline':
+      return node.attrs?.latex ? `$${node.attrs.latex}$` : ''
+    case 'paragraph':
+    case 'heading':
+      return (node.content || []).map(nodeToText).join('')
+    case 'horizontalRule':
+      return ''
+    default:
+      return (node.content || []).map(nodeToText).join('\n')
+  }
+}
+
+export function splitQuestionDoc(doc) {
+  const blocks = Array.isArray(doc?.content) ? doc.content : []
+  const cut = blocks.findIndex(containsRichBlock)
+  const head = cut === -1 ? blocks : blocks.slice(0, cut)
+  const tail = cut === -1 ? [] : blocks.slice(cut)
+  return {
+    text: head.map(nodeToText).join('\n').replace(/\s+$/, ''),
+    richContent: tail.length ? { type: 'doc', content: tail } : null,
+  }
+}
+
+export function combineQuestionDoc(text, richContent) {
+  const clean = String(text ?? '').split(ZERO_WIDTH).join('')
+  const rich = richContent?.content || []
+  if (!clean.trim()) return rich.length ? { type: 'doc', content: rich } : emptyDoc()
+  const head = textToDoc(clean).content
+  return { type: 'doc', content: [...head, ...rich] }
+}
+
+export const EMPTY_TEXT_PLACEHOLDER = ZERO_WIDTH
+
 export function countWords(doc) {
   return docPlainText(doc).trim().split(/\s+/).filter(Boolean).length
 }
