@@ -48,11 +48,6 @@ const STEPS = [
 
 const SECURITY_TOGGLES = [
   {
-    key: "camera",
-    label: "Require Camera",
-    desc: "Candidates must enable their webcam before starting.",
-  },
-  {
     key: "microphone",
     label: "Require Microphone",
     desc: "Audio is monitored for the full session.",
@@ -155,7 +150,7 @@ export default function CreateExam() {
           duration_minutes: e.duration_minutes,
           scheduled_start: toLocalDatetimeInput(e.scheduled_start),
           scheduled_end: toLocalDatetimeInput(e.scheduled_end),
-          security: { ...DEFAULT_SECURITY, ...(e.security || {}) },
+          security: { ...DEFAULT_SECURITY, ...(e.security || {}), camera: true },
           questions: qs.map(questionFromApi),
         });
       } catch (err) {
@@ -268,7 +263,7 @@ export default function CreateExam() {
     duration_minutes: Number(exam.duration_minutes),
     scheduled_start: toUtcIso(exam.scheduled_start),
     scheduled_end: toUtcIso(exam.scheduled_end),
-    security: exam.security,
+    security: { ...exam.security, camera: true }, // camera is always required
     questions: questionsLocked ? null : exam.questions.map(questionToPayload),
   });
 

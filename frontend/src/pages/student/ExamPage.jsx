@@ -487,11 +487,14 @@ export default function ExamPage() {
 
   const mm = String(Math.floor((secondsLeft || 0) / 60)).padStart(2, '0')
   const ss = String((secondsLeft || 0) % 60).padStart(2, '0')
+  // Only what the teacher enabled for this exam is requested/shown.
+  const sec = exam.security || {}
+  const requires = (k) => sec[k] !== false
   const recoveryActions = [
-    { key: 'camera', label: 'Enable Camera', icon: Camera, missing: !cameraStream },
-    { key: 'microphone', label: 'Enable Microphone', icon: Mic, missing: !micStream },
-    { key: 'screenShare', label: 'Enable Screen Sharing', icon: MonitorUp, missing: !screenStream },
-    { key: 'identity', label: 'Verify Identity', icon: ScanFace, missing: identityNeedsRecovery },
+    { key: 'camera', label: 'Enable Camera', icon: Camera, missing: requires('camera') && !cameraStream },
+    { key: 'microphone', label: 'Enable Microphone', icon: Mic, missing: requires('microphone') && !micStream },
+    { key: 'screenShare', label: 'Enable Screen Sharing', icon: MonitorUp, missing: requires('screenShare') && !screenStream },
+    { key: 'identity', label: 'Verify Identity', icon: ScanFace, missing: requires('identity') && requires('camera') && identityNeedsRecovery },
   ].filter((action) => action.missing)
 
   return (
@@ -627,16 +630,18 @@ export default function ExamPage() {
         <aside className="order-3">
           <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-3 dark:border-slate-800 dark:bg-slate-900">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Proctoring Status</p>
-            <LiveFeed type="face" stream={cameraStream} mirror connected={!!cameraStream} size="sm" />
-            <StatusRow icon={Camera} label="Camera" ok={!!cameraStream} />
-            <StatusRow icon={Mic} label="Microphone" ok={!!micStream} />
-            <StatusRow icon={MonitorUp} label="Screen Sharing" ok={!!screenStream} />
-            <StatusRow
-              icon={ScanFace}
-              label="Identity"
-              ok={identity.status === 'verified'}
-              text={identityLabel(identity)}
-            />
+            {requires('camera') && <LiveFeed type="face" stream={cameraStream} mirror connected={!!cameraStream} size="sm" />}
+            {requires('camera') && <StatusRow icon={Camera} label="Camera" ok={!!cameraStream} />}
+            {requires('microphone') && <StatusRow icon={Mic} label="Microphone" ok={!!micStream} />}
+            {requires('screenShare') && <StatusRow icon={MonitorUp} label="Screen Sharing" ok={!!screenStream} />}
+            {requires('identity') && requires('camera') && (
+              <StatusRow
+                icon={ScanFace}
+                label="Identity"
+                ok={identity.status === 'verified'}
+                text={identityLabel(identity)}
+              />
+            )}
             {recoveryActions.length > 0 && (
               <div className="space-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
                 {recoveryActions.map(({ key, label, icon: Icon }) => {
