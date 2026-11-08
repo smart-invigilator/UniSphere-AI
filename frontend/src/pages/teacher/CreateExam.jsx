@@ -27,6 +27,15 @@ import { Stepper } from "../../components/common/ProgressBar";
 import Button from "../../components/common/Button";
 import Modal from "../../components/common/Modal";
 import QuestionEditor from "../../components/questions/QuestionEditor";
+import { DatePicker, TimePicker } from "../../components/common/DateTimePickers";
+import {
+  browserTimeZone,
+  listTimeZones,
+  zonedToUtcMs,
+  utcMsToZoned,
+  formatInZone,
+  formatUtc,
+} from "../../utils/examTime";
 import {
   QUESTION_TYPES,
   blankQuestion,
@@ -46,7 +55,14 @@ const STEPS = [
   "Review",
 ];
 
+// Every proctoring option is mandatory: they are shown to the teacher as locked
+// (always on) and the backend enforces them regardless of what is sent.
 const SECURITY_TOGGLES = [
+  {
+    key: "camera",
+    label: "Camera Required",
+    desc: "Candidates must keep their webcam on for the full session.",
+  },
   {
     key: "microphone",
     label: "Require Microphone",
@@ -88,24 +104,16 @@ const blankExam = () => ({
   title: "",
   description: "",
   duration_minutes: 60,
-  scheduled_start: "",
-  scheduled_end: "",
+  // Opening time is entered as date + time + an explicit time zone; the closing
+  // time is derived (opening + duration) and never typed.
+  start_date: "",
+  start_time: "",
+  tz: browserTimeZone(),
   security: { ...DEFAULT_SECURITY },
   questions: [],
 });
 
-function toUtcIso(localValue) {
-  if (!localValue) return null;
-  const d = new Date(localValue);
-  return Number.isNaN(d.getTime()) ? null : d.toISOString();
-}
-
-function toLocalDatetimeInput(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+const TIME_ZONES = listTimeZones();
 
 export default function CreateExam() {
   const { courses, createExam, updateExam, publishExam } = useExams();
@@ -143,14 +151,18 @@ export default function CreateExam() {
         if (cancelled) return;
         setExamStatus(e.status);
         setQuestionsLocked(!!e.has_attempts);
+        const tz = browserTimeZone();
+        const startMs = e.scheduled_start ? new Date(e.scheduled_start).getTime() : null;
+        const zoned = utcMsToZoned(startMs, tz);
         setExam({
           courseId: e.course_id,
           title: e.title,
           description: e.description,
           duration_minutes: e.duration_minutes,
-          scheduled_start: toLocalDatetimeInput(e.scheduled_start),
-          scheduled_end: toLocalDatetimeInput(e.scheduled_end),
-          security: { ...DEFAULT_SECURITY, ...(e.security || {}), camera: true },
+          start_date: zoned.date,
+          start_time: zoned.time,
+          tz,
+          security: { ...DEFAULT_SECURITY }, // all proctoring options are mandatory
           questions: qs.map(questionFromApi),
         });
       } catch (err) {
@@ -165,11 +177,25 @@ export default function CreateExam() {
   }, [isEditing, editId]);
 
   const set = (patch) => setExam((e) => ({ ...e, ...patch }));
-  const setSecurity = (key) =>
-    setExam((e) => ({
-      ...e,
-      security: { ...e.security, [key]: !e.security[key] },
-    }));
+
+  // Authoritative UTC clock from the server, so a wrong PC clock can't let a
+  // teacher schedule an exam in the past (or block a valid time).
+  const [clockOffset, setClockOffset] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const t0 = Date.now();
+    api
+      .get("/time")
+      .then((r) => {
+        const server = new Date(r.utc).getTime();
+        if (!cancelled && !Number.isNaN(server)) setClockOffset(server - (t0 + Date.now()) / 2);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const serverNow = () => Date.now() + clockOffset;
 
   const focusActiveCard = () => {
     requestAnimationFrame(() => {
@@ -232,10 +258,19 @@ export default function CreateExam() {
     return null;
   })();
   const titleError = exam.title.trim().length < 2 ? "Title must be at least 2 characters." : null;
-  const scheduleError =
-    exam.scheduled_start && exam.scheduled_end && new Date(exam.scheduled_end) <= new Date(exam.scheduled_start)
-      ? "The closing time must be after the opening time."
-      : null;
+  const hasSchedule = !!(exam.start_date || exam.start_time);
+  const startMs = zonedToUtcMs(exam.start_date, exam.start_time, exam.tz);
+  const endMs =
+    startMs != null && !durationError ? startMs + Number(exam.duration_minutes) * 60000 : null;
+  const scheduleError = !hasSchedule
+    ? null
+    : !exam.start_date || !exam.start_time
+      ? "Choose both a start date and a start time."
+      : startMs == null
+        ? "That date or time is not valid."
+        : !isEditing && startMs < serverNow() - 60000
+          ? "The start time is in the past. Choose a future date and time."
+          : null;
 
   const canProceed = () => {
     if (step === 0) return !!exam.courseId;
@@ -261,9 +296,10 @@ export default function CreateExam() {
     title: exam.title,
     description: exam.description,
     duration_minutes: Number(exam.duration_minutes),
-    scheduled_start: toUtcIso(exam.scheduled_start),
-    scheduled_end: toUtcIso(exam.scheduled_end),
-    security: { ...exam.security, camera: true }, // camera is always required
+    // Sent as UTC instants; the server re-derives the closing time itself.
+    scheduled_start: startMs != null ? new Date(startMs).toISOString() : null,
+    scheduled_end: endMs != null ? new Date(endMs).toISOString() : null,
+    security: { ...DEFAULT_SECURITY }, // every proctoring option is mandatory
     questions: questionsLocked ? null : exam.questions.map(questionToPayload),
   });
 
@@ -430,21 +466,74 @@ export default function CreateExam() {
 
         {step === 2 && (
           <StepShell icon={CalendarDays} title="Schedule (optional)">
-            <Field
-              label="Opens At"
-              type="datetime-local"
-              value={exam.scheduled_start}
-              onChange={(v) => set({ scheduled_start: v })}
-            />
-            <Field
-              label="Closes At"
-              type="datetime-local"
-              value={exam.scheduled_end}
-              onChange={(v) => set({ scheduled_end: v })}
-              error={scheduleError}
-            />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <DatePicker
+                label="Start date"
+                value={exam.start_date}
+                onChange={(v) => set({ start_date: v })}
+                min={isEditing ? undefined : utcMsToZoned(serverNow(), exam.tz).date}
+                error={scheduleError}
+              />
+              <TimePicker
+                label="Start time"
+                value={exam.start_time}
+                onChange={(v) => set({ start_time: v })}
+              />
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                Time zone
+              </label>
+              <select
+                value={exam.tz}
+                onChange={(e) => set({ tz: e.target.value })}
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
+              >
+                {(TIME_ZONES.includes(exam.tz) ? TIME_ZONES : [exam.tz, ...TIME_ZONES]).map((z) => (
+                  <option key={z} value={z}>
+                    {z.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[11px] text-slate-400">
+                The time above is read in this zone and stored as UTC, so every student sees the same moment in their own local time.
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                Closes at (calculated)
+              </label>
+              <div
+                aria-readonly="true"
+                className="w-full cursor-not-allowed rounded-lg border border-slate-200 bg-slate-100 px-3 py-2.5 text-sm text-slate-600 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300"
+              >
+                {endMs != null ? formatInZone(endMs, exam.tz) : "Set a start date and time to see when the exam closes"}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-400">
+                Start time + {exam.duration_minutes || 0}-minute duration.
+              </p>
+            </div>
+
+            {startMs != null && !scheduleError && (
+              <div className="rounded-lg border border-brand-200 bg-brand-50/60 p-3 text-xs text-slate-600 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-slate-300">
+                <p><span className="font-semibold">Opens:</span> {formatInZone(startMs, exam.tz)} · {formatUtc(startMs)}</p>
+                <p className="mt-0.5"><span className="font-semibold">Closes:</span> {formatInZone(endMs, exam.tz)} · {formatUtc(endMs)}</p>
+              </div>
+            )}
+
+            {hasSchedule && (
+              <button
+                type="button"
+                onClick={() => set({ start_date: "", start_time: "" })}
+                className="text-xs font-semibold text-slate-500 hover:text-brand-600"
+              >
+                Clear schedule
+              </button>
+            )}
             <p className="text-xs text-slate-400">
-              Leave blank if this exam doesn't need a fixed window — students
+              Optional. Leave blank if this exam doesn't need a fixed window — students
               can join with the code any time once it's published.
             </p>
           </StepShell>
@@ -452,25 +541,34 @@ export default function CreateExam() {
 
         {step === 3 && (
           <StepShell icon={ShieldCheck} title="Security & Tools">
+            <p className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+              All security measures are mandatory for every exam and can't be turned off.
+            </p>
             <div className="space-y-2.5">
               {SECURITY_TOGGLES.map((t) => (
-                <label
+                <div
                   key={t.key}
-                  className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60"
+                  className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-800/40"
                 >
                   <input
                     type="checkbox"
-                    checked={!!exam.security[t.key]}
-                    onChange={() => setSecurity(t.key)}
-                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                    checked
+                    disabled
+                    readOnly
+                    aria-label={t.label}
+                    className="mt-0.5 h-4 w-4 cursor-not-allowed rounded border-slate-300 text-brand-600 opacity-70"
                   />
-                  <div>
+                  <div className="flex-1">
                     <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
                       {t.label}
                     </p>
                     <p className="text-xs text-slate-400">{t.desc}</p>
                   </div>
-                </label>
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
+                    Always on
+                  </span>
+                </div>
               ))}
             </div>
           </StepShell>
@@ -612,6 +710,14 @@ export default function CreateExam() {
                   .reduce((sum, q) => sum + (Math.round(Number(q.marks)) || 0), 0)}
               />
               <ReviewRow label="Questions" value={answerableCount} />
+              <ReviewRow
+                label="Opens"
+                value={startMs != null ? `${formatInZone(startMs, exam.tz)} (${formatUtc(startMs)})` : "Anytime once published"}
+              />
+              <ReviewRow
+                label="Closes"
+                value={endMs != null ? `${formatInZone(endMs, exam.tz)} (${formatUtc(endMs)})` : "—"}
+              />
             </div>
             <div className="mt-4 flex flex-wrap gap-1.5">
               {Object.entries(typeCounts).map(([type, count]) => (
@@ -624,7 +730,7 @@ export default function CreateExam() {
               ))}
             </div>
             <div className="mt-3 flex flex-wrap gap-1.5">
-              {SECURITY_TOGGLES.filter((t) => exam.security[t.key]).map((t) => (
+              {SECURITY_TOGGLES.map((t) => (
                 <span
                   key={t.key}
                   className="rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-400"

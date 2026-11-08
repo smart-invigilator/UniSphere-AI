@@ -77,8 +77,11 @@ def test_questions_locked_but_details_editable_after_start(world):
 
 def test_schedule_and_duration_validation(world):
     r = world["client"].post("/api/v1/exams", headers=world["T"], json={"course_id": world["course_id"], "title": "Sched",
-        "scheduled_start": "2026-11-10T10:00:00Z", "scheduled_end": "2026-11-10T09:00:00Z", "questions": QUESTIONS})
-    assert r.status_code == 422 and "closing time" in r.text
+        "scheduled_start": "2026-11-10T10:00:00Z", "scheduled_end": "2026-11-10T09:00:00Z",
+        "duration_minutes": 90, "questions": QUESTIONS})
+    # The closing time is never client-controlled: it is always opening time + duration.
+    assert r.status_code == 201, r.text
+    assert r.json()["scheduled_end"].startswith("2026-11-10T11:30:00")
     for bad in (0, -5, 601):
         r = world["client"].post("/api/v1/exams", headers=world["T"], json={"course_id": world["course_id"], "title": "Sched", "duration_minutes": bad, "questions": QUESTIONS})
         assert r.status_code == 422
@@ -116,14 +119,22 @@ def test_grading_marks_must_be_between_zero_and_question_total(world):
 
 def test_schedule_times_are_timezone_safe(world):
     r = world["client"].post("/api/v1/exams", headers=world["T"], json={"course_id": world["course_id"], "title": "TZ exam",
-        "scheduled_start": "2020-01-01T08:00:00", "scheduled_end": "2020-01-01T10:00:00", "questions": QUESTIONS})
+        "scheduled_start": "2020-01-01T08:00:00", "duration_minutes": 120, "questions": QUESTIONS})
     assert r.status_code == 201, r.text
     eid = r.json()["id"]
     assert r.json()["scheduled_end"].startswith("2020-01-01T10:00:00")
     published = world["client"].post(f"/api/v1/exams/{eid}/publish", headers=world["T"])
     assert published.status_code == 200 and published.json()["is_closed"] is True
     r = world["client"].post("/api/v1/exams", headers=world["T"], json={"course_id": world["course_id"], "title": "TZ exam 2",
-        "scheduled_start": "2020-01-01T08:00:00+05:00", "scheduled_end": "2020-01-01T10:00:00+05:00", "questions": QUESTIONS})
+        "scheduled_start": "2020-01-01T08:00:00+05:00", "duration_minutes": 120, "questions": QUESTIONS})
     assert r.status_code == 201
     end = r.json()["scheduled_end"]
     assert end.startswith("2020-01-01T05:00:00"), end
+
+
+def test_security_options_are_always_mandatory(world):
+    r = world["client"].post("/api/v1/exams", headers=world["T"], json={"course_id": world["course_id"], "title": "Sec",
+        "security": {"camera": False, "microphone": False, "screenShare": False, "identity": False,
+                     "liveness": False, "calculator": False}, "questions": QUESTIONS})
+    assert r.status_code == 201, r.text
+    assert all(r.json()["security"].values()), r.json()["security"]

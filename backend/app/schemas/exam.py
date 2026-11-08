@@ -1,5 +1,5 @@
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from pydantic import BaseModel, Field, field_validator, model_validator
 from app.core.refs import AttemptOut_, CourseIn, CourseOut_, ExamOut_
@@ -9,12 +9,26 @@ MEDIA_URL_RE = re.compile(r"^/media/questions/[A-Za-z0-9_\-]+/[A-Za-z0-9_\-]+\.(
 
 
 class SecuritySettings(BaseModel):
+    """Every proctoring option is mandatory; whatever the client sends is overridden."""
     camera: bool = True
     microphone: bool = True
     screenShare: bool = True
     identity: bool = True
     liveness: bool = True
     calculator: bool = True
+
+    @model_validator(mode="after")
+    def _all_mandatory(self):
+        for name in type(self).model_fields:
+            setattr(self, name, True)
+        return self
+
+
+def _derive_window(exam) -> None:
+    """The closing time is never user-supplied: it is opening time + duration (all UTC)."""
+    exam.scheduled_end = (
+        exam.scheduled_start + timedelta(minutes=exam.duration_minutes) if exam.scheduled_start else None
+    )
 
 
 class MediaItem(BaseModel):
@@ -105,8 +119,7 @@ class ExamCreate(BaseModel):
 
     @model_validator(mode="after")
     def _check_schedule(self):
-        if self.scheduled_start and self.scheduled_end and self.scheduled_end <= self.scheduled_start:
-            raise ValueError("The closing time must be after the opening time")
+        _derive_window(self)
         return self
 
 
@@ -130,8 +143,7 @@ class ExamUpdate(BaseModel):
 
     @model_validator(mode="after")
     def _check_schedule(self):
-        if self.scheduled_start and self.scheduled_end and self.scheduled_end <= self.scheduled_start:
-            raise ValueError("The closing time must be after the opening time")
+        _derive_window(self)
         return self
 
 

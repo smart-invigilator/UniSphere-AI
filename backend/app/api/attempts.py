@@ -263,15 +263,17 @@ def enter_exam(attempt_id: AttemptIn, db: DBSession = Depends(get_db),
     exam = a.exam
     if a.status in ("submitted", "graded"):
         raise HTTPException(409, "You have already taken this exam. It can only be attempted once.")
-    if exam.security.get("camera", True) and not a.camera_ok:
+    # Every proctoring check is mandatory. This deliberately ignores exam.security
+    # (which could hold stale or tampered values) so no exam can skip a check.
+    if not a.camera_ok:
         raise HTTPException(400, "Camera check not completed")
-    if exam.security.get("microphone", True) and not a.microphone_ok:
+    if not a.microphone_ok:
         raise HTTPException(400, "Microphone check not completed")
-    if exam.security.get("screenShare", True) and not a.screen_ok:
+    if not a.screen_ok:
         raise HTTPException(400, "Screen share check not completed")
-    if exam.security.get("identity", True) and not a.identity_verified:
+    if not a.identity_verified:
         raise HTTPException(400, "Identity verification not completed")
-    if exam.security.get("liveness", True) and not a.liveness_ok:
+    if not a.liveness_ok:
         raise HTTPException(400, "Liveness check not completed")
 
     if a.status not in ("in_progress",):

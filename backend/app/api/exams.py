@@ -10,7 +10,7 @@ from app.models.user import User, Role
 from app.models.student import Student
 from app.models.course import Course
 from app.models.enrollment import Enrollment
-from app.models.exam import ExamSession, Question
+from app.models.exam import ExamSession, Question, DEFAULT_SECURITY
 from app.models.attempt import ExamAttempt
 from app.models.answer import Answer
 from app.schemas.exam import ExamCreate, ExamUpdate, ExamOut, ExamJoinByCode, QuestionIn, QuestionOut, QuestionAnswerKeyOut
@@ -51,7 +51,7 @@ def _exam_out(e: ExamSession, db: DBSession, my_attempt: "ExamAttempt | None" = 
         id=e.id, course_id=e.course_id, course_title=e.course.title, title=e.title,
         description=e.description, code=e.code, duration_minutes=e.duration_minutes,
         total_marks=e.total_marks, scheduled_start=e.scheduled_start, scheduled_end=e.scheduled_end,
-        status=e.status, is_closed=is_closed, security=e.security, question_count=qcount,
+        status=e.status, is_closed=is_closed, security=dict(DEFAULT_SECURITY), question_count=qcount,
         created_at=e.created_at,
         my_attempt_id=my_attempt.id if my_attempt else None,
         my_attempt_status=my_attempt.status if my_attempt else None,

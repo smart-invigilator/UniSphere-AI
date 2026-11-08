@@ -115,6 +115,13 @@ os.makedirs(_questions_dir, exist_ok=True)
 app.mount(f"{settings.MEDIA_URL}/questions", StaticFiles(directory=_questions_dir), name="media-questions")
 
 
+@app.get(f"{settings.API_V1}/time")
+def server_time():
+    """Authoritative UTC clock so clients never rely on their own system time."""
+    from datetime import datetime, timezone
+    return {"utc": datetime.now(timezone.utc).isoformat()}
+
+
 @app.get("/health")
 def health():
     from app.ai.analyzer import analyzer
