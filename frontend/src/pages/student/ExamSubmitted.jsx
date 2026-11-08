@@ -36,6 +36,12 @@ export default function ExamSubmitted() {
           </div>
         </div>
 
+        {state?.timeUp && (
+          <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-400">
+            The time has ended. Your exam was submitted automatically with the answers saved so far.
+          </p>
+        )}
+
         {ungraded > 0 && (
           <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
             {ungraded} answer{ungraded > 1 ? 's' : ''} still need{ungraded > 1 ? '' : 's'} manual grading by your instructor — your final score will update once that's done.

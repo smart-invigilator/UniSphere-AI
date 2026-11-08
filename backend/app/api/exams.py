@@ -27,6 +27,15 @@ def as_utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+def check_exam_window(exam: ExamSession) -> None:
+    """Raise unless now is inside [scheduled_start, scheduled_end] (both inclusive)."""
+    now = datetime.now(timezone.utc)
+    if exam.scheduled_start and now < as_utc(exam.scheduled_start):
+        raise HTTPException(400, "This exam has not started yet. You can join once the start time is reached.")
+    if exam.scheduled_end and now > as_utc(exam.scheduled_end):
+        raise HTTPException(400, "This exam's submission window has closed.")
+
+
 def _exams_with_attempts(db: DBSession, exam_ids: list[int]) -> set[int]:
     if not exam_ids:
         return set()
@@ -303,17 +312,12 @@ def _get_or_create_attempt(exam: ExamSession, prof: Student, db: DBSession) -> E
             .with_for_update()
         )
 
-    def window_closed() -> bool:
-        if not exam.scheduled_end:
-            return False
-        return datetime.now(timezone.utc) > as_utc(exam.scheduled_end)
-
     attempt = find()
     if attempt and attempt.status in ("submitted", "graded"):
         raise HTTPException(409, "You have already taken this exam. It can only be attempted once.")
+    if not attempt or attempt.status != "in_progress":
+        check_exam_window(exam)
     if not attempt:
-        if window_closed():
-            raise HTTPException(400, "This exam's submission window has closed.")
         attempt = ExamAttempt(exam_id=exam.id, student_id=prof.id, status="checklist")
         db.add(attempt)
         try:
@@ -326,8 +330,6 @@ def _get_or_create_attempt(exam: ExamSession, prof: Student, db: DBSession) -> E
             if attempt is None:
                 raise HTTPException(409, "Could not start the exam right now. Please try again.")
     if attempt.status == "not_started":
-        if window_closed():
-            raise HTTPException(400, "This exam's submission window has closed.")
         attempt.status = "checklist"
     attempt.liveness_ok = False
     db.commit()

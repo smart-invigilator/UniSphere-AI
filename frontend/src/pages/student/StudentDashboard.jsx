@@ -189,7 +189,11 @@ export default function StudentDashboard() {
 
                 <div className="mt-4 flex-1" />
                 {exam.studentStatus === 'available' ? (
-                  <Button className="w-full" size="sm" iconRight={ArrowRight} onClick={() => joinExam(exam)}>Join Exam</Button>
+                  exam.scheduled_start && Date.now() < new Date(exam.scheduled_start).getTime() ? (
+                    <Button className="w-full" size="sm" disabled>Opens {new Date(exam.scheduled_start).toLocaleString()}</Button>
+                  ) : (
+                    <Button className="w-full" size="sm" iconRight={ArrowRight} onClick={() => joinExam(exam)}>Join Exam</Button>
+                  )
                 ) : (
                   <div className="rounded-lg bg-slate-50 px-3 py-2 text-center text-xs dark:bg-slate-800">
                     <ScoreSummary exam={exam} />

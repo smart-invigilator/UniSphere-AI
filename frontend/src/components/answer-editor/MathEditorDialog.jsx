@@ -209,11 +209,18 @@ export default function MathEditorDialog({ initialLatex, display, onSave, onCanc
 
         <div className="ae-dialog-preview mt-2 min-h-[2.5rem] overflow-x-auto rounded-lg border border-dashed border-slate-200 px-3 py-2 dark:border-slate-700" aria-live="polite">
           {!preview ? (
-            <span className="text-xs text-slate-400">Preview appears here</span>
+            <span className="text-xs text-slate-400">Your equation preview will appear here</span>
           ) : preview.error ? (
-            <span className="text-xs font-medium text-rose-600">Cannot render: {preview.error}. Your LaTeX is kept exactly as typed.</span>
+            <span className="text-xs font-medium text-amber-600">This equation can't be shown yet. Check that every part of it is complete.</span>
           ) : (
-            <span dangerouslySetInnerHTML={{ __html: preview.html }} />
+            <>
+              <span dangerouslySetInnerHTML={{ __html: preview.html }} />
+              {preview.incomplete && (
+                <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                  You're doing fine — the empty boxes (▢) are spaces still waiting for a value. Click a box and type to fill it, or save as is.
+                </p>
+              )}
+            </>
           )}
         </div>
 

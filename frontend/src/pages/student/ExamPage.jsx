@@ -126,7 +126,11 @@ export default function ExamPage() {
           setLoadError('This attempt is not currently in progress.')
         } else if (a.started_at) {
           const elapsed = (Date.now() - new Date(a.started_at).getTime()) / 1000
-          setSecondsLeft(Math.max(0, Math.round(e.duration_minutes * 60 - elapsed)))
+          let left = e.duration_minutes * 60 - elapsed
+          if (e.scheduled_end) {
+            left = Math.min(left, (new Date(e.scheduled_end).getTime() - Date.now()) / 1000)
+          }
+          setSecondsLeft(Math.max(0, Math.round(left)))
         }
       } catch (err) {
         if (!cancelled) setLoadError(err.message || 'Could not load the exam')
@@ -460,6 +464,7 @@ export default function ExamPage() {
           totalMarks: res.total_marks,
           ungraded: res.ungraded_questions,
           attemptId,
+          timeUp: secondsLeft === 0,
         },
       })
     } catch (err) {

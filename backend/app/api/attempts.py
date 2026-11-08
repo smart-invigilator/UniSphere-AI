@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from app.db.session import get_db
 from app.core.refs import AttemptIn, ExamIn, ATTEMPT, encode_ref
 from app.api.deps import get_current_user, require_roles
+from app.api.exams import check_exam_window, as_utc
 from app.models.user import User, Role
 from app.models.student import Student
 from app.models.exam import ExamSession, Question
@@ -44,7 +45,11 @@ def _attempt_deadline(a: ExamAttempt) -> "datetime | None":
         return None
     from datetime import timedelta
     started = a.started_at if a.started_at.tzinfo else a.started_at.replace(tzinfo=timezone.utc)
-    return started + timedelta(minutes=a.exam.duration_minutes, seconds=DEADLINE_GRACE_SECONDS)
+    deadline = started + timedelta(minutes=a.exam.duration_minutes, seconds=DEADLINE_GRACE_SECONDS)
+    if a.exam.scheduled_end:
+        # The exam window closing ends every attempt, however late the student joined.
+        deadline = min(deadline, as_utc(a.exam.scheduled_end) + timedelta(seconds=DEADLINE_GRACE_SECONDS))
+    return deadline
 
 
 def _get_attempt(attempt_id: AttemptIn, db: DBSession) -> ExamAttempt:
@@ -277,8 +282,7 @@ def enter_exam(attempt_id: AttemptIn, db: DBSession = Depends(get_db),
         raise HTTPException(400, "Liveness check not completed")
 
     if a.status not in ("in_progress",):
-        if exam.scheduled_end and datetime.now(timezone.utc) > (exam.scheduled_end if exam.scheduled_end.tzinfo else exam.scheduled_end.replace(tzinfo=timezone.utc)):
-            raise HTTPException(400, "This exam's submission window has closed.")
+        check_exam_window(exam)
         a.status = "in_progress"
         a.started_at = datetime.now(timezone.utc)
     if exam.status == "published":

@@ -7,9 +7,17 @@ export function renderMathSafe(latex, displayMode) {
   const key = `${displayMode ? 'D' : 'I'}${latex}`
   if (cache.has(key)) return cache.get(key)
   let result
+  let incomplete = false
+  // MathLive writes empty slots as \placeholder{...}; KaTeX doesn't know that command, so show an empty box instead.
+  const source = latex.replace(/\\placeholder(?:\[[^\]]*\])?\{([^{}]*)\}/g, (_, inner) => {
+    if (inner.trim()) return inner
+    incomplete = true
+    return '\\square'
+  })
   try {
     result = {
-      html: katex.renderToString(latex, {
+      incomplete,
+      html: katex.renderToString(source, {
         displayMode,
         throwOnError: true,
         strict: 'ignore',
