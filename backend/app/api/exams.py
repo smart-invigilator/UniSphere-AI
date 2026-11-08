@@ -308,6 +308,8 @@ def _get_or_create_attempt(exam: ExamSession, prof: Student, db: DBSession) -> E
         return datetime.now(timezone.utc) > as_utc(exam.scheduled_end)
 
     attempt = find()
+    if attempt and attempt.status in ("submitted", "graded"):
+        raise HTTPException(409, "You have already taken this exam. It can only be attempted once.")
     if not attempt:
         if window_closed():
             raise HTTPException(400, "This exam's submission window has closed.")

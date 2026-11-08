@@ -261,6 +261,8 @@ def enter_exam(attempt_id: AttemptIn, db: DBSession = Depends(get_db),
                 user: User = Depends(require_roles(Role.student))):
     a = _own_attempt(attempt_id, user, db)
     exam = a.exam
+    if a.status in ("submitted", "graded"):
+        raise HTTPException(409, "You have already taken this exam. It can only be attempted once.")
     if exam.security.get("camera", True) and not a.camera_ok:
         raise HTTPException(400, "Camera check not completed")
     if exam.security.get("microphone", True) and not a.microphone_ok:
