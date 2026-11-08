@@ -19,7 +19,7 @@ export default function GradingPage() {
   const { examId } = useParams()
   const notify = useNotify()
   const [searchParams] = useSearchParams()
-  const initialAttemptId = Number(searchParams.get('attempt')) || null
+  const initialAttemptId = searchParams.get('attempt') || null // opaque string reference, not a number
   const [exam, setExam] = useState(null)
   const [questions, setQuestions] = useState([])
   const [attempts, setAttempts] = useState([])

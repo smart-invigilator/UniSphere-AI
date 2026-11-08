@@ -3,6 +3,26 @@ import { stopStream } from '../utils/media'
 
 const ProctorSessionContext = createContext(null)
 
+const STORAGE_KEY = 'proctor_session'
+
+function loadStored() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY)
+    if (raw) {
+      const { attemptId = null, examId = null } = JSON.parse(raw)
+      return { attemptId, examId }
+    }
+  } catch { /* storage unavailable */ }
+  return { attemptId: null, examId: null }
+}
+
+function saveStored(attemptId, examId) {
+  try {
+    if (attemptId == null) sessionStorage.removeItem(STORAGE_KEY)
+    else sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ attemptId, examId }))
+  } catch { /* storage unavailable */ }
+}
+
 // Lives at the App root (never unmounts on route change) so the camera,
 // microphone, and screen-share permission grants obtained during the
 // Pre-Exam Checklist survive the navigation into the actual exam page —
@@ -12,14 +32,19 @@ export function ProctorSessionProvider({ children }) {
   const [cameraStream, setCameraStream] = useState(null)
   const [micStream, setMicStream] = useState(null)
   const [screenStream, setScreenStream] = useState(null)
-  const [attemptId, setAttemptIdState] = useState(null)
-  const [examId, setExamIdState] = useState(null)
-  const attemptRef = useRef(null)
+  // attemptId/examId are mirrored to sessionStorage so a browser refresh
+  // (F5 / Ctrl+R) keeps the student on the exam page. MediaStreams can't
+  // survive a reload, so the exam page offers the "Enable ..." recovery
+  // buttons for whichever permissions were lost.
+  const [attemptId, setAttemptIdState] = useState(() => loadStored().attemptId)
+  const [examId, setExamIdState] = useState(() => loadStored().examId)
+  const attemptRef = useRef(attemptId)
 
   const setAttempt = useCallback((id, exId) => {
     attemptRef.current = id
     setAttemptIdState(id)
     setExamIdState(exId)
+    saveStored(id, exId)
   }, [])
 
   const stopAll = useCallback(() => {
@@ -32,6 +57,7 @@ export function ProctorSessionProvider({ children }) {
     attemptRef.current = null
     setAttemptIdState(null)
     setExamIdState(null)
+    saveStored(null, null)
   }, [cameraStream, micStream, screenStream])
 
   // Debounced variant for component-unmount cleanup. React StrictMode

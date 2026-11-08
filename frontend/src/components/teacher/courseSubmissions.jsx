@@ -24,7 +24,9 @@ export function useCourseSubmissions() {
   const numbered = useMemo(() => {
     const counters = new Map()
     const numbers = new Map()
-    ;[...attempts].sort((a, b) => a.id - b.id).forEach((a) => {
+    // ids are opaque strings, so order attempts by start time (id as tiebreak)
+    const startedAt = (a) => new Date(a.started_at || a.submitted_at || 0).getTime() || 0
+    ;[...attempts].sort((a, b) => startedAt(a) - startedAt(b) || String(a.id).localeCompare(String(b.id))).forEach((a) => {
       const key = `${a.courseId}:${a.student_id}`
       const n = (counters.get(key) || 0) + 1
       counters.set(key, n)

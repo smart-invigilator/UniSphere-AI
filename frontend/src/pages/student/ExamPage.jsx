@@ -37,7 +37,7 @@ export default function ExamPage() {
     cameraStream, setCameraStream,
     screenStream, setScreenStream,
     micStream, setMicStream,
-    attemptId, stopAll, scheduleStopAll, cancelScheduledStop,
+    attemptId, examId: storedExamId, stopAll, scheduleStopAll, cancelScheduledStop,
   } = useProctorSession()
   const navigate = useNavigate()
 
@@ -86,7 +86,7 @@ export default function ExamPage() {
   const ignoreMediaEndRef = useRef(false)
 
   useEffect(() => {
-    if (!attemptId) {
+    if (!attemptId || (storedExamId != null && String(storedExamId) !== String(examId))) {
       navigate(`/student/checklist/${examId}`, { replace: true })
       return
     }
