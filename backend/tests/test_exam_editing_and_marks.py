@@ -137,4 +137,6 @@ def test_security_options_are_always_mandatory(world):
         "security": {"camera": False, "microphone": False, "screenShare": False, "identity": False,
                      "liveness": False, "calculator": False}, "questions": QUESTIONS})
     assert r.status_code == 201, r.text
-    assert all(r.json()["security"].values()), r.json()["security"]
+    sec = r.json()["security"]
+    assert all(sec[k] for k in ("camera", "microphone", "screenShare", "identity", "liveness")), sec
+    assert sec["calculator"] is False  # the calculator is the one teacher-controlled tool

@@ -9,7 +9,8 @@ MEDIA_URL_RE = re.compile(r"^/media/questions/[A-Za-z0-9_\-]+/[A-Za-z0-9_\-]+\.(
 
 
 class SecuritySettings(BaseModel):
-    """Every proctoring option is mandatory; whatever the client sends is overridden."""
+    """Every proctoring check is mandatory (whatever the client sends is overridden).
+    The calculator is the only teacher-controlled tool."""
     camera: bool = True
     microphone: bool = True
     screenShare: bool = True
@@ -18,8 +19,8 @@ class SecuritySettings(BaseModel):
     calculator: bool = True
 
     @model_validator(mode="after")
-    def _all_mandatory(self):
-        for name in type(self).model_fields:
+    def _proctoring_mandatory(self):
+        for name in ("camera", "microphone", "screenShare", "identity", "liveness"):
             setattr(self, name, True)
         return self
 

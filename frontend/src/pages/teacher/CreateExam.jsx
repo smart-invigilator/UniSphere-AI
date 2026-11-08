@@ -50,39 +50,15 @@ const STEPS = [
   "Course",
   "Basic Info",
   "Schedule",
-  "Security",
+  "Tools",
   "Questions",
   "Review",
 ];
 
-// Every proctoring option is mandatory: they are shown to the teacher as locked
-// (always on) and the backend enforces them regardless of what is sent.
-const SECURITY_TOGGLES = [
-  {
-    key: "camera",
-    label: "Camera Required",
-    desc: "Candidates must keep their webcam on for the full session.",
-  },
-  {
-    key: "microphone",
-    label: "Require Microphone",
-    desc: "Audio is monitored for the full session.",
-  },
-  {
-    key: "screenShare",
-    label: "Require Screen Sharing",
-    desc: "Candidates must share their entire screen.",
-  },
-  {
-    key: "identity",
-    label: "Require Identity Verification",
-    desc: "Face is enrolled and re-checked against you throughout the exam (ArcFace).",
-  },
-  {
-    key: "liveness",
-    label: "Require Liveness Detection",
-    desc: "Candidates complete a short head-turn challenge to rule out a static photo.",
-  },
+// The proctoring checks (camera, microphone, screen share, identity, liveness) are
+// always enforced by the backend and are not shown here. The calculator is the
+// only tool the teacher can choose to allow.
+const TOOLS = [
   {
     key: "calculator",
     label: "Allow Scientific Calculator",
@@ -162,7 +138,7 @@ export default function CreateExam() {
           start_date: zoned.date,
           start_time: zoned.time,
           tz,
-          security: { ...DEFAULT_SECURITY }, // all proctoring options are mandatory
+          security: { ...DEFAULT_SECURITY, calculator: e.security?.calculator !== false },
           questions: qs.map(questionFromApi),
         });
       } catch (err) {
@@ -299,7 +275,8 @@ export default function CreateExam() {
     // Sent as UTC instants; the server re-derives the closing time itself.
     scheduled_start: startMs != null ? new Date(startMs).toISOString() : null,
     scheduled_end: endMs != null ? new Date(endMs).toISOString() : null,
-    security: { ...DEFAULT_SECURITY }, // every proctoring option is mandatory
+    // Proctoring checks are always on (the server enforces this); only the calculator is optional.
+    security: { ...DEFAULT_SECURITY, calculator: !!exam.security.calculator },
     questions: questionsLocked ? null : exam.questions.map(questionToPayload),
   });
 
@@ -364,9 +341,9 @@ export default function CreateExam() {
       <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
         {isEditing
           ? questionsLocked
-            ? "Students have started this exam — you can edit its details, schedule and security. Questions are locked."
-            : "Update the details, schedule, security, or questions for this exam."
-          : "Build out the course, schedule, security, and questions."}
+            ? "Students have started this exam — you can edit its details, schedule and tools. Questions are locked."
+            : "Update the details, schedule, tools, or questions for this exam."
+          : "Build out the course, schedule, tools, and questions."}
       </p>
 
       <div className="mt-6">
@@ -540,35 +517,26 @@ export default function CreateExam() {
         )}
 
         {step === 3 && (
-          <StepShell icon={ShieldCheck} title="Security & Tools">
-            <p className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-              <Lock className="mt-0.5 h-4 w-4 shrink-0" />
-              All security measures are mandatory for every exam and can't be turned off.
-            </p>
+          <StepShell icon={ShieldCheck} title="Tools">
             <div className="space-y-2.5">
-              {SECURITY_TOGGLES.map((t) => (
-                <div
+              {TOOLS.map((t) => (
+                <label
                   key={t.key}
-                  className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-800/40"
+                  className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/60"
                 >
                   <input
                     type="checkbox"
-                    checked
-                    disabled
-                    readOnly
-                    aria-label={t.label}
-                    className="mt-0.5 h-4 w-4 cursor-not-allowed rounded border-slate-300 text-brand-600 opacity-70"
+                    checked={!!exam.security[t.key]}
+                    onChange={() =>
+                      setExam((e) => ({ ...e, security: { ...e.security, [t.key]: !e.security[t.key] } }))
+                    }
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                   />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-slate-800 dark:text-slate-100">
-                      {t.label}
-                    </p>
+                  <div>
+                    <p className="text-sm font-medium text-slate-800 dark:text-slate-100">{t.label}</p>
                     <p className="text-xs text-slate-400">{t.desc}</p>
                   </div>
-                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400">
-                    Always on
-                  </span>
-                </div>
+                </label>
               ))}
             </div>
           </StepShell>
@@ -581,7 +549,7 @@ export default function CreateExam() {
                 <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
                   <Lock className="mt-0.5 h-4 w-4 shrink-0" />
                   Students have already started this exam, so its questions are locked to keep their answers and grades valid.
-                  You can still change the title, description, schedule, duration and security settings.
+                  You can still change the title, description, schedule, duration and tools.
                 </p>
                 <QuestionList
                   questions={exam.questions}
@@ -730,7 +698,7 @@ export default function CreateExam() {
               ))}
             </div>
             <div className="mt-3 flex flex-wrap gap-1.5">
-              {SECURITY_TOGGLES.map((t) => (
+              {TOOLS.filter((t) => exam.security[t.key]).map((t) => (
                 <span
                   key={t.key}
                   className="rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-medium text-brand-700 dark:bg-brand-500/10 dark:text-brand-400"
