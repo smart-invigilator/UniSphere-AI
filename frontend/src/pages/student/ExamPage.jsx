@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback, lazy, Suspense } fro
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import {
   Clock, Camera, Mic, MonitorUp, ScanFace, Flag, ChevronLeft, ChevronRight,
-  AlertTriangle, X, Send, Maximize2, Calculator, Info,
+  AlertTriangle, X, Send, Calculator, Info,
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { useProctorSession } from '../../context/ProctorSessionContext'
@@ -12,6 +12,8 @@ import { captureFrame, waitForVideoReady, requestEntireScreen } from '../../util
 import Button from '../../components/common/Button'
 import Modal from '../../components/common/Modal'
 import LiveFeed from '../../components/LiveFeed'
+import PhoneCameraPanel from '../../components/proctor/PhoneCameraPanel'
+import { phoneCameraHost } from '../../services/phoneCamera'
 import QuestionRenderer from '../../components/questions/QuestionRenderer'
 import { SaveStatus } from '../../components/answer-editor/UnifiedAnswerEditor'
 import { createAnswerSync } from '../../services/answerSync'
@@ -23,12 +25,6 @@ const WEBCAM_FPS_MS = 500
 const SCREEN_FPS_MS = 2000
 const SCREEN_MAX_WIDTH = 1600
 const SCREEN_RESEND_UNCHANGED_MS = 10000
-
-const CONFIDENTIAL_ALERT_TYPES = new Set([
-  'Different Person Detected',
-  'Face Covered',
-  'Face Obstructed',
-])
 
 export default function ExamPage() {
   const { examId } = useParams()
@@ -78,7 +74,6 @@ export default function ExamPage() {
   const [identityNeedsRecovery, setIdentityNeedsRecovery] = useState(false)
   const [permissionRecovery, setPermissionRecovery] = useState({})
   const [connected, setConnected] = useState(false)
-  const [fullscreenActive, setFullscreenActive] = useState(() => !!document.fullscreenElement)
   const everEnteredFullscreenRef = useRef(!!document.fullscreenElement)
 
   const camVideoRef = useRef(null)
@@ -164,16 +159,13 @@ export default function ExamPage() {
 
     const offs = [
       studentStreamService.on('connected', (v) => setConnected(v)),
-      studentStreamService.on('alert', (payload) => {
-        if (!payload?.student || payload.student.id !== myStudentIdRef.current) return
-        if (CONFIDENTIAL_ALERT_TYPES.has(payload.alert.type)) return
-        showBanner({ text: payload.alert.type, severity: payload.alert.severity })
-      }),
       studentStreamService.on('students:tick', (list) => {
         const mine = list.find((s) => s.id === myStudentIdRef.current)
         if (mine?.identity) {
           setIdentity(mine.identity)
-          setIdentityNeedsRecovery(['mismatch', 'unavailable'].includes(mine.identity.status))
+          // Only a missing reference (a technical problem) asks the student to
+          // re-verify; mismatches are reported to the teacher silently.
+          setIdentityNeedsRecovery(mine.identity.status === 'unavailable')
         }
       }),
     ]
@@ -190,8 +182,8 @@ export default function ExamPage() {
     bannerTimeout.current = setTimeout(() => setBanner(null), 6000)
   }
 
-  const reportViolation = (type, label, severity = 'medium') => {
-    showBanner({ text: label, severity })
+  // Violations go to the teacher only — the student is not shown what was flagged.
+  const reportViolation = (type) => {
     studentStreamService.reportViolation(type)
   }
 
@@ -215,6 +207,23 @@ export default function ExamPage() {
 
     return () => cleanups.forEach((cleanup) => cleanup())
   }, [cameraStream, micStream, screenStream])
+
+  // The phone camera dropped (closed tab, dead battery, lost Wi-Fi): same as a stopped camera.
+  useEffect(() => {
+    const onGone = () => {
+      if (ignoreMediaEndRef.current) return
+      reportViolation('camera_stopped', 'Phone camera was disconnected', 'high')
+    }
+    const offLost = phoneCameraHost.on('lost', onGone)
+    const offStopped = phoneCameraHost.on('stopped', onGone)
+    return () => { offLost(); offStopped() }
+  }, [])
+
+  const confirmPhoneCamera = async () => {
+    try {
+      await api.post(`/attempts/${attemptId}/checklist/camera`)
+    } catch { /* the stream itself is what matters during the exam */ }
+  }
 
   const recoverPermission = async (key) => {
     setPermissionRecovery((current) => ({ ...current, [key]: { checking: true, error: null } }))
@@ -264,7 +273,6 @@ export default function ExamPage() {
     const onPaste = () => reportViolation('paste', 'Paste detected', 'medium')
     const onFullscreenChange = () => {
       const isFs = !!document.fullscreenElement
-      setFullscreenActive(isFs)
       if (!isFs && everEnteredFullscreenRef.current) {
         reportViolation('fullscreen_exit', 'Exited fullscreen mode', 'high')
       }
@@ -286,9 +294,23 @@ export default function ExamPage() {
     }
   }, [])
 
-  const enterFullscreen = () => {
-    document.documentElement.requestFullscreen?.().catch(() => {})
-  }
+  // The exam runs fullscreen by default (entered from the checklist's Enter
+  // button). If the student leaves fullscreen, or reloads the page, the next
+  // click or key press puts it back — browsers only allow fullscreen from a
+  // user gesture, so there is no way to do it without one.
+  useEffect(() => {
+    const restore = () => {
+      if (!document.fullscreenElement && !ignoreMediaEndRef.current) {
+        document.documentElement.requestFullscreen?.().catch(() => {})
+      }
+    }
+    document.addEventListener('pointerdown', restore, true)
+    document.addEventListener('keydown', restore, true)
+    return () => {
+      document.removeEventListener('pointerdown', restore, true)
+      document.removeEventListener('keydown', restore, true)
+    }
+  }, [])
 
   useEffect(() => {
     if (!('getScreenDetails' in window)) return
@@ -455,6 +477,7 @@ export default function ExamPage() {
       studentStreamService.disconnect()
       ignoreMediaEndRef.current = true
       stopAll()
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {})
       navigate('/student/exam-submitted', {
         state: {
           examTitle: exam?.title,
@@ -542,17 +565,8 @@ export default function ExamPage() {
       {banner && (
         <div className="mx-auto mt-3 max-w-[1400px] px-4">
           <div className="flex animate-slide-in items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400">
-            <span className="flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> Warning — {banner.text}</span>
+            <span className="flex items-center gap-1.5"><AlertTriangle className="h-3.5 w-3.5" /> {banner.text}</span>
             <button onClick={() => setBanner(null)}><X className="h-3.5 w-3.5" /></button>
-          </div>
-        </div>
-      )}
-
-      {!fullscreenActive && (
-        <div className="mx-auto mt-3 max-w-[1400px] px-4">
-          <div className="flex items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs font-medium text-blue-800 dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-400">
-            <span className="flex items-center gap-1.5"><Maximize2 className="h-3.5 w-3.5" /> This exam should be taken in fullscreen mode.</span>
-            <Button size="sm" variant="secondary" icon={Maximize2} onClick={enterFullscreen}>Go Fullscreen</Button>
           </div>
         </div>
       )}
@@ -643,9 +657,12 @@ export default function ExamPage() {
               <StatusRow
                 icon={ScanFace}
                 label="Identity"
-                ok={identity.status === 'verified'}
+                ok={identity.status !== 'unavailable'}
                 text={identityLabel(identity)}
               />
+            )}
+            {requires('camera') && !cameraStream && (
+              <PhoneCameraPanel attemptId={attemptId} compact onConnected={confirmPhoneCamera} />
             )}
             {recoveryActions.length > 0 && (
               <div className="space-y-2 border-t border-slate-100 pt-3 dark:border-slate-800">
@@ -712,18 +729,11 @@ export default function ExamPage() {
 
 function identityLabel(identity) {
   switch (identity?.status) {
-    case 'verified':
-      return identity.similarity != null ? `Verified · ${Math.round(identity.similarity * 100)}%` : 'Verified'
-    case 'mismatch':
-      return 'Mismatch!'
-    case 'no_face':
-      return 'Face not visible'
-    case 'obstructed':
-      return 'Face covered'
-    case 'verifying':
-      return 'Verifying…'
+    // Detailed results (mismatch, face covered, …) are for the teacher only.
+    case 'unavailable':
+      return 'Needs verification'
     default:
-      return 'Monitoring…'
+      return 'Active'
   }
 }
 

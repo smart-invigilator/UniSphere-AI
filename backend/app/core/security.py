@@ -39,6 +39,23 @@ def create_refresh_token(subject: str, role: str) -> str:
     )
 
 
+PHONE_CAMERA_TOKEN_TYPE = "phone_camera"
+
+
+def create_phone_camera_token(user_id: int, attempt_ref: str, expires: timedelta = timedelta(hours=4)) -> str:
+    """Token embedded in the QR code. It only lets a phone join the signaling
+    room of one specific exam attempt and send camera video; it is not a login."""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user_id),
+        "attempt": attempt_ref,
+        "type": PHONE_CAMERA_TOKEN_TYPE,
+        "iat": now,
+        "exp": now + expires,
+    }
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
 def decode_token(token: str) -> dict[str, Any]:
     try:
         return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])

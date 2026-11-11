@@ -170,7 +170,10 @@ def login_face(data: FaceLoginIn, request: Request, db: DBSession = Depends(get_
         result = face_scan.verify_scan(prof.face_gallery, outcome.bins)
         if not result.ok:
             logger.warning("face login rejected for user %s: %s", user.id, result.failed_views)
-            raise HTTPException(status.HTTP_403_FORBIDDEN, result.message + " Access denied.")
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                f"Face verification failed. {result.message} Please try again with your face well lit and fully visible.",
+            )
         return _tokens(user)
 
     front = face_scan.front_average(outcome.bins)
@@ -180,7 +183,8 @@ def login_face(data: FaceLoginIn, request: Request, db: DBSession = Depends(get_
             logger.warning("face enrollment upgrade rejected for user %s sim=%.3f", user.id, sim)
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
-                "This face doesn't match the photo registered on your account. Access denied.",
+                "Face verification failed — this face doesn't match the photo registered on your "
+                "account. Please try again with your face well lit and fully visible.",
             )
     prof.face_gallery = face_scan.build_gallery(outcome.bins)
     prof.face_scan_updated_at = datetime.now(timezone.utc)

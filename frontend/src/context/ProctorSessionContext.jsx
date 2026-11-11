@@ -1,5 +1,7 @@
-import { createContext, useContext, useState, useCallback, useRef } from 'react'
+import { createContext, useContext, useState, useCallback, useRef, useEffect } from 'react'
 import { stopStream } from '../utils/media'
+import { api } from '../services/api'
+import { phoneCameraHost, buildPairingUrl } from '../services/phoneCamera'
 
 const ProctorSessionContext = createContext(null)
 
@@ -40,6 +42,40 @@ export function ProctorSessionProvider({ children }) {
   const [examId, setExamIdState] = useState(() => loadStored().examId)
   const attemptRef = useRef(attemptId)
 
+  // Phone-as-camera (QR pairing). The WebRTC link lives here, at the app root,
+  // so it survives the navigation from the checklist into the exam page.
+  const [phoneState, setPhoneState] = useState(phoneCameraHost.state)
+  const [phoneStream, setPhoneStream] = useState(null)
+
+  useEffect(() => {
+    const offState = phoneCameraHost.on('state', setPhoneState)
+    const offStream = phoneCameraHost.on('stream', (stream) => {
+      setPhoneStream(stream)
+      setCameraStream(stream)
+    })
+    const offLost = phoneCameraHost.on('lost', (lostStream) => {
+      setPhoneStream(null)
+      setCameraStream((current) => (current === lostStream ? null : current))
+    })
+    const offStopped = phoneCameraHost.on('stopped', (stoppedStream) => {
+      setPhoneStream(null)
+      setCameraStream((current) => (current === stoppedStream ? null : current))
+    })
+    return () => { offState(); offStream(); offLost(); offStopped() }
+  }, [])
+
+  // Opens a pairing session and returns the URL to encode in the QR code.
+  const startPhoneCamera = useCallback(async (forAttemptId = attemptRef.current) => {
+    const tokens = api.getTokens()
+    const pairToken = await phoneCameraHost.start(tokens?.access_token, forAttemptId)
+    return buildPairingUrl(pairToken)
+  }, [])
+
+  const stopPhoneCamera = useCallback(() => {
+    phoneCameraHost.stop()
+    setPhoneStream(null)
+  }, [])
+
   const setAttempt = useCallback((id, exId) => {
     attemptRef.current = id
     setAttemptIdState(id)
@@ -48,6 +84,8 @@ export function ProctorSessionProvider({ children }) {
   }, [])
 
   const stopAll = useCallback(() => {
+    phoneCameraHost.stop()
+    setPhoneStream(null)
     stopStream(cameraStream)
     stopStream(micStream)
     stopStream(screenStream)
@@ -89,6 +127,7 @@ export function ProctorSessionProvider({ children }) {
         cameraStream, setCameraStream,
         micStream, setMicStream,
         screenStream, setScreenStream,
+        phoneState, phoneStream, startPhoneCamera, stopPhoneCamera,
         attemptId, examId, setAttempt,
         stopAll, scheduleStopAll, cancelScheduledStop,
       }}

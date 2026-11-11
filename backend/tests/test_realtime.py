@@ -205,3 +205,71 @@ def test_pipeline_serial_per_student_keeps_cadence_and_newest_frame(monkeypatch)
     assert "frame-boom" in processed and p.failed == 1
     assert processed[-1] == "after-2"
     assert s.analysis_count == len(processed) - 1
+
+def test_phone_camera_pairing_relays_signaling_only_within_the_attempt(live_server):
+    url, info = live_server
+    s0, s1 = info["students"]
+
+    async def scenario():
+        host_ev, phone_ev, other_ev = [], [], []
+        host = await _client(url, host_ev)
+        phone = await _client(url, phone_ev)
+        other = await _client(url, other_ev)
+
+        res = await host.call("phone:host", {"token": s0["token"], "attempt_id": s0["attempt"]})
+        assert res["ok"] and res["pair_token"]
+        pair = res["pair_token"]
+
+        # a pairing token must never act as a login token
+        assert not (await other.call("student:join", {"token": pair, "attempt_id": s0["attempt"]}))["ok"]
+        assert not (await other.call("phone:host", {"token": pair, "attempt_id": s0["attempt"]}))["ok"]
+        # a student cannot host someone else's attempt, and a login token is not a pairing token
+        assert not (await other.call("phone:host", {"token": s1["token"], "attempt_id": s0["attempt"]}))["ok"]
+        assert not (await other.call("phone:join", {"pair_token": s0["token"]}))["ok"]
+
+        assert (await phone.call("phone:join", {"pair_token": pair}))["ok"]
+        await asyncio.sleep(0.3)
+        assert ("phone:peer", {"connected": True}) in host_ev
+
+        await host.emit("phone:signal", {"data": {"description": {"type": "offer", "sdp": "x"}}})
+        await phone.emit("phone:signal", {"data": {"description": {"type": "answer", "sdp": "y"}}})
+        await asyncio.sleep(0.3)
+        assert any(e == "phone:signal" and p["data"]["description"]["type"] == "offer" for e, p in phone_ev)
+        assert any(e == "phone:signal" and p["data"]["description"]["type"] == "answer" for e, p in host_ev)
+        assert not any(e == "phone:signal" for e, _ in other_ev)
+
+        await phone.disconnect()
+        await asyncio.sleep(0.3)
+        assert ("phone:peer", {"connected": False}) in host_ev
+        await host.disconnect()
+        await other.disconnect()
+
+    asyncio.run(scenario())
+
+
+def test_phone_pairing_is_allowed_during_checklist_but_not_after_submit(live_server):
+    url, info = live_server
+    s0 = info["students"][0]
+    from app.models.attempt import ExamAttempt
+    from app.core.refs import decode_ref
+
+    def set_status(status):
+        db = SessionLocal()
+        try:
+            db.get(ExamAttempt, decode_ref(ATTEMPT, s0["attempt"])).status = status
+            db.commit()
+        finally:
+            db.close()
+
+    async def scenario():
+        c = await _client(url, [])
+        set_status("checklist")
+        assert (await c.call("phone:host", {"token": s0["token"], "attempt_id": s0["attempt"]}))["ok"]
+        # ...but the exam stream itself still needs a started attempt
+        assert not (await c.call("student:join", {"token": s0["token"], "attempt_id": s0["attempt"]}))["ok"]
+        set_status("submitted")
+        assert not (await c.call("phone:host", {"token": s0["token"], "attempt_id": s0["attempt"]}))["ok"]
+        set_status("in_progress")
+        await c.disconnect()
+
+    asyncio.run(scenario())

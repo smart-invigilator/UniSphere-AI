@@ -10,6 +10,9 @@ import { api, ApiError } from '../../services/api'
 import { Stepper, ProgressBar } from '../../components/common/ProgressBar'
 import Button from '../../components/common/Button'
 import LiveFeed from '../../components/LiveFeed'
+import PhoneCameraPanel from '../../components/proctor/PhoneCameraPanel'
+import { phoneCameraHost } from '../../services/phoneCamera'
+import { useCameraAvailability } from '../../utils/useCameraAvailability'
 import { captureFrame, waitForVideoReady, requestEntireScreen, ScreenShareError } from '../../utils/media'
 
 const ALL_STEPS = [
@@ -43,6 +46,8 @@ export default function PreExamCheck() {
   const [enterError, setEnterError] = useState(null)
   const [entering, setEntering] = useState(false)
 
+  const { hasCamera } = useCameraAvailability()
+  const noWebcam = hasCamera === false
   const camVideoRef = useRef(null) // hidden video always bound to cameraStream, used for frame capture
 
   // --- bootstrap: load exam + create/resume attempt ---
@@ -121,6 +126,26 @@ export default function PreExamCheck() {
       setKeyError('camera', mediaErrorMessage(e, 'camera'))
     }
   }
+
+  // A phone paired by QR code counts as the camera: record it as granted.
+  const onPhoneCameraConnected = async () => {
+    setKeyError('camera', null)
+    try {
+      await api.post(`/attempts/${attempt.id}/checklist/camera`)
+      setKeyStatus('camera', 'passed')
+    } catch (e) {
+      setKeyStatus('camera', 'failed')
+      setKeyError('camera', e?.message || 'Could not confirm the phone camera.')
+    }
+  }
+
+  // If the phone drops during the checklist, the camera step must be redone.
+  useEffect(() => {
+    const reset = () => { setKeyStatus('camera', 'pending'); setKeyError('camera', null) }
+    const offLost = phoneCameraHost.on('lost', reset)
+    const offStopped = phoneCameraHost.on('stopped', reset)
+    return () => { offLost(); offStopped() }
+  }, [])
 
   // --------------------------------------------------------- microphone --
   const allowMicrophone = async () => {
@@ -206,10 +231,10 @@ export default function PreExamCheck() {
       }
       const res = await api.post(`/attempts/${attempt.id}/checklist/enroll-face`, { frames })
       setKeyStatus('identity', res.identity_verified ? 'passed' : 'failed')
-      if (!res.identity_verified) setKeyError('identity', 'Identity verification failed. Please try again')
+      if (!res.identity_verified) setKeyError('identity', identityFailureMessage())
     } catch (e) {
       setKeyStatus('identity', 'failed')
-      setKeyError('identity', apiErrorMessage(e))
+      setKeyError('identity', identityFailureMessage(e))
     }
   }
 
@@ -226,7 +251,7 @@ export default function PreExamCheck() {
   // specific millisecond. See PreExamCheck's liveness/step usage below.
   const LIVENESS_REACTION_DELAY_MS = 600   // time to read + start reacting before we check anything
   const LIVENESS_POLL_INTERVAL_MS = 350    // how often we re-check while waiting
-  const LIVENESS_POLL_WINDOW_MS = 4500     // total time allowed to complete the movement
+  const LIVENESS_POLL_WINDOW_MS = 6000     // total time allowed to complete the (larger) movement
 
   const pollLivenessStep = async (step, extraPayload) => {
     await sleep(LIVENESS_REACTION_DELAY_MS)
@@ -278,7 +303,7 @@ export default function PreExamCheck() {
       }
       const center = straight.frame
 
-      setLivenessPrompt('Turn your head slightly to the LEFT (just a little) — hold it there')
+      setLivenessPrompt('Turn your head well to the LEFT (look over your shoulder) — hold it there')
       setLivenessProgress(40)
       const left = await pollLivenessStep('left', { center_frame: center })
       if (!left.ok) {
@@ -289,7 +314,7 @@ export default function PreExamCheck() {
         return
       }
 
-      setLivenessPrompt('Turn your head slightly to the RIGHT (just a little) — hold it there')
+      setLivenessPrompt('Turn your head well to the RIGHT (look over your shoulder) — hold it there')
       setLivenessProgress(70)
       const right = await pollLivenessStep('right', { center_frame: center })
       if (!right.ok) {
@@ -317,6 +342,10 @@ export default function PreExamCheck() {
 
   // ---------------------------------------------------------- enter exam --
   const enterExam = async () => {
+    // Must run synchronously inside the click handler: browsers only allow
+    // fullscreen from a user gesture. Fullscreen survives the SPA navigation,
+    // so the exam opens fullscreen without a separate button.
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen?.().catch(() => {})
     setEntering(true)
     setEnterError(null)
     try {
@@ -373,9 +402,19 @@ export default function PreExamCheck() {
               status={currentStatus}
               error={stepError.camera}
               onAllow={allowCamera}
+              allowHidden={noWebcam}
+              hiddenNote="No camera was detected on this computer. Scan the QR code below to use your phone as the camera."
               buttonLabel="Allow Camera"
               successLabel="Camera Access Granted"
               preview={<LiveFeed type="face" stream={cameraStream} mirror connected={!!cameraStream} size="xl" />}
+              extra={attempt && (
+                <PhoneCameraPanel
+                  attemptId={attempt.id}
+                  onConnected={onPhoneCameraConnected}
+                  required={noWebcam}
+                  defaultOpen={currentStatus === 'failed' && /No camera/i.test(stepError.camera || '')}
+                />
+              )}
             />
           )}
 
@@ -466,9 +505,16 @@ export default function PreExamCheck() {
 
 function mediaErrorMessage(e, device) {
   if (e?.name === 'NotAllowedError') return `Permission denied. Please allow ${device} access in your browser and try again.`
-  if (e?.name === 'NotFoundError') return `No ${device} device was found on this computer.`
+  if (e?.name === 'NotFoundError') return device === 'camera' ? 'No camera was found on this computer. Connect a webcam, or use your phone as the camera below.' : `No ${device} device was found on this computer.`
   if (e?.name === 'NotReadableError') return `Your ${device} is already in use by another application.`
   return e?.message || `Could not access your ${device}.`
+}
+
+// Turns any identity-check failure into a friendly, retryable message
+// instead of a dead-end "entry blocked" notice.
+function identityFailureMessage(e) {
+  const fallback = 'Identity verification failed. Please try again — face the camera directly, make sure your face is well lit and fully visible, and keep only yourself in view.'
+  return (e && apiErrorMessage(e)) || fallback
 }
 
 function apiErrorMessage(e) {
@@ -476,7 +522,7 @@ function apiErrorMessage(e) {
   return e?.message || 'Something went wrong. Please try again.'
 }
 
-function CheckStep({ icon: Icon, title, instruction, status, error, onAllow, buttonLabel, successLabel, preview }) {
+function CheckStep({ icon: Icon, title, instruction, status, error, onAllow, buttonLabel, successLabel, preview, extra, allowHidden = false, hiddenNote }) {
   return (
     <div>
       <div className="flex items-center gap-3">
@@ -492,7 +538,12 @@ function CheckStep({ icon: Icon, title, instruction, status, error, onAllow, but
       <div className="mt-4">{preview}</div>
 
       <div className="mt-4">
-        {status === 'pending' && <Button className="w-full" onClick={onAllow}>{buttonLabel}</Button>}
+        {allowHidden && status !== 'passed' && (
+          <div className="rounded-lg bg-amber-50 px-3 py-2.5 text-xs font-medium text-amber-800 dark:bg-amber-500/10 dark:text-amber-300">
+            {hiddenNote}
+          </div>
+        )}
+        {!allowHidden && status === 'pending' && <Button className="w-full" onClick={onAllow}>{buttonLabel}</Button>}
         {status === 'checking' && (
           <div className="flex items-center justify-center gap-2 rounded-lg bg-slate-50 py-3 text-sm font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-300">
             <Loader2 className="h-4 w-4 animate-spin" /> Checking…
@@ -503,7 +554,7 @@ function CheckStep({ icon: Icon, title, instruction, status, error, onAllow, but
             <CheckCircle2 className="h-4 w-4" /> {successLabel}
           </div>
         )}
-        {status === 'failed' && (
+        {!allowHidden && status === 'failed' && (
           <div className="space-y-2">
             <div className="flex items-center gap-2 rounded-lg bg-rose-50 px-3 py-2.5 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-400">
               <XCircle className="h-4 w-4 shrink-0" /> {error || 'That check failed.'}
@@ -512,6 +563,7 @@ function CheckStep({ icon: Icon, title, instruction, status, error, onAllow, but
           </div>
         )}
       </div>
+      {extra}
     </div>
   )
 }

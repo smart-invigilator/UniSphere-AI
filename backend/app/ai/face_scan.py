@@ -28,12 +28,14 @@ MAX_TEMPLATES_PER_BIN = 3
 MAX_FRAME_SIDE = 640
 
 ALL_LABELS = ["front", "left_25", "left_45", "left_65", "profile_left", "right_25", "right_45", "right_65", "profile_right"]
+# A slight turn (left_25 / right_25) is still stored in the gallery but does
+# not satisfy a side on its own: the student must turn the head well over.
 REQUIRED_GROUPS = {
     "front": ["front"],
-    "left": ["left_25", "left_45", "left_65", "profile_left"],
-    "right": ["right_25", "right_45", "right_65", "profile_right"],
+    "left": ["left_45", "left_65", "profile_left"],
+    "right": ["right_45", "right_65", "profile_right"],
 }
-GROUP_TEXT = {"front": "straight ahead", "left": "turned to your left", "right": "turned to your right"}
+GROUP_TEXT = {"front": "straight ahead", "left": "turned well to your left", "right": "turned well to your right"}
 PROFILE_LABELS = {"profile_left", "profile_right"}
 
 CHAINS = [

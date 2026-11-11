@@ -36,7 +36,10 @@ MAX_PLAIN_RESPONSE = 100_000
 
 router = APIRouter(prefix="/attempts", tags=["attempts"])
 
-LIVENESS_YAW_THRESHOLD = 9.0
+# "Look straight" tolerance, and how far each head turn must go (degrees,
+# relative to the straight-ahead frame) for the liveness check to accept it.
+LIVENESS_STRAIGHT_MAX_YAW = 10.0
+LIVENESS_YAW_THRESHOLD = 20.0
 DEADLINE_GRACE_SECONDS = 60 
 
 
@@ -170,9 +173,10 @@ def enroll_face(attempt_id: AttemptIn, data: FaceEnrollIn, db: DBSession = Depen
     if similarity < threshold:
         raise HTTPException(
             403,
-            "The face at the camera right now doesn't match your registered "
-            "identity. Exam entry blocked. Contact your instructor if this "
-            "is a mistake.",
+            "Identity verification failed — we couldn't match your face to your "
+            "registered face scan. Please try again: face the camera directly, "
+            "make sure your face is well lit and fully visible (no mask, cap or "
+            "sunglasses), and keep only yourself in view.",
         )
 
     a.reference_embedding = reference
@@ -243,7 +247,7 @@ def liveness_step(attempt_id: AttemptIn, data: LivenessStepIn, db: DBSession = D
         return LivenessStepOut(step_ok=False, message="Your head position could not be measured. Please try again.")
 
     if data.step == "straight":
-        step_ok = abs(yaw) <= LIVENESS_YAW_THRESHOLD
+        step_ok = abs(yaw) <= LIVENESS_STRAIGHT_MAX_YAW
         message = "Look straight at the camera and try again." if not step_ok else "Straight-ahead position confirmed."
     else:
         if not data.center_frame:
@@ -256,7 +260,7 @@ def liveness_step(attempt_id: AttemptIn, data: LivenessStepIn, db: DBSession = D
         delta = yaw - center_yaw
         step_ok = delta > LIVENESS_YAW_THRESHOLD if data.step == "left" else delta < -LIVENESS_YAW_THRESHOLD
         direction = "left" if data.step == "left" else "right"
-        message = f"Turn your head a little further {direction} and try again." if not step_ok else f"{direction.title()} position confirmed."
+        message = f"Turn your head further to the {direction} and hold it there." if not step_ok else f"{direction.title()} position confirmed."
 
     return LivenessStepOut(step_ok=step_ok, message=message)
 

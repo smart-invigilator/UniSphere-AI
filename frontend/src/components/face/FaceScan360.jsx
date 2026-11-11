@@ -11,14 +11,20 @@ const STORE_WIDTH = 480
 const FINISH_WINDOW_MS = 2500
 const TIPS_AFTER_MS = 15000
 const FRONT_MAX_YAW = 10
-const GAUGE_RANGE = 30
+// A side only counts once the head is turned at least this far (degrees).
+// Slight turns (10–22°) are still captured for the gallery but no longer
+// complete the step — the student has to look clearly over their shoulder.
+const REQUIRED_TURN_YAW = 30
+const GAUGE_RANGE = 45
 const SMOOTHING = 0.35
 const FAST_TURN_DEG = 14
 
+// Labels that can complete a side. left_25/right_25 (slight turns) are
+// deliberately excluded.
 const GROUPS = {
   front: ['front'],
-  left: ['left_25', 'left_45', 'left_65', 'profile_left'],
-  right: ['right_25', 'right_45', 'right_65', 'profile_right'],
+  left: ['left_45', 'left_65', 'profile_left'],
+  right: ['right_45', 'right_65', 'profile_right'],
 }
 
 const STEPS = [
@@ -29,16 +35,19 @@ const STEPS = [
 
 const INSTRUCTIONS = {
   front: { title: 'Look straight at the camera', detail: 'Keep your face inside the oval and hold still.' },
-  left: { title: 'Slowly turn your head to your LEFT', detail: 'Watch the marker move into the left zone.' },
-  right: { title: 'Now slowly turn your head to your RIGHT', detail: 'Watch the marker move into the right zone.' },
+  left: { title: 'Turn your head FAR to your LEFT', detail: 'Keep turning until the marker reaches the end of the left zone.' },
+  right: { title: 'Now turn your head FAR to your RIGHT', detail: 'Keep turning until the marker reaches the end of the right zone.' },
   finishing: { title: 'All angles captured!', detail: 'Finishing your scan…' },
 }
 
 const FRONT_HALF = (FRONT_MAX_YAW / GAUGE_RANGE) * 50
+const TURN_HALF = (REQUIRED_TURN_YAW / GAUGE_RANGE) * 50
+// The coloured target zones start only at REQUIRED_TURN_YAW, so the gap
+// between "Front" and each side shows how much further the head must turn.
 const ZONES = [
-  { id: 'left', label: 'Your left', from: 0, to: 50 - FRONT_HALF },
+  { id: 'left', label: 'Your left', from: 0, to: 50 - TURN_HALF },
   { id: 'front', label: 'Front', from: 50 - FRONT_HALF, to: 50 + FRONT_HALF },
-  { id: 'right', label: 'Your right', from: 50 + FRONT_HALF, to: 100 },
+  { id: 'right', label: 'Your right', from: 50 + TURN_HALF, to: 100 },
 ]
 
 function grab(video, canvas, width, quality) {
@@ -251,7 +260,13 @@ export default function FaceScan360({ title = 'Face Scan', description, onComple
         label = `profile_${side}`
       } else {
         const side = sideOf(label)
-        if (side === 'left' || side === 'right') lastSideRef.current = side
+        if (side === 'left' || side === 'right') {
+          lastSideRef.current = side
+          // Not turned far enough yet: keep the frame (the server re-labels
+          // mesh frames from their yaw anyway) but file it as a slight turn so
+          // it can't complete the side.
+          if (res.yaw != null && Math.abs(res.yaw) < REQUIRED_TURN_YAW) label = `${side}_25`
+        }
       }
       const tooFast = moveMarker(res)
       const before = groupsDone(capturesRef.current)
@@ -270,7 +285,8 @@ export default function FaceScan360({ title = 'Face Scan', description, onComple
       } else {
         const side = sideOf(label)
         if (side && side !== 'front' && side !== stage) setFeedback(`That's your ${side} — now turn to your ${stage.toUpperCase()}.`)
-        else setFeedback(side === stage ? 'Good — keep going.' : 'Keep turning slowly…')
+        else if (side === stage) setFeedback('Good — turn a bit further…')
+        else setFeedback('Keep turning slowly…')
       }
     } catch (e) {
       if (e?.status === 503) {
@@ -422,7 +438,7 @@ export default function FaceScan360({ title = 'Face Scan', description, onComple
         <div className="space-y-2">
           <ul className="space-y-1 text-xs text-slate-500 dark:text-slate-400">
             <li className="flex gap-1.5"><Circle className="mt-0.5 h-2.5 w-2.5 shrink-0" /> Takes about 10 seconds.</li>
-            <li className="flex gap-1.5"><Circle className="mt-0.5 h-2.5 w-2.5 shrink-0" /> Look straight, then slowly turn your head left, then right. A marker shows your head direction.</li>
+            <li className="flex gap-1.5"><Circle className="mt-0.5 h-2.5 w-2.5 shrink-0" /> Look straight, then turn your head well to the left, then well to the right (like looking over your shoulder). A marker shows your head direction.</li>
             <li className="flex gap-1.5"><Circle className="mt-0.5 h-2.5 w-2.5 shrink-0" /> Good light, only you in view, no hat, mask or sunglasses.</li>
           </ul>
           <Button type="button" className="w-full" size="sm" icon={Camera} onClick={start}>

@@ -18,6 +18,7 @@ import AppNavbar from './components/layout/AppNavbar'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
+import PhoneCameraPage from './pages/phone/PhoneCameraPage'
 
 import StudentDashboard from './pages/student/StudentDashboard'
 import PreExamCheck from './pages/student/PreExamCheck'
@@ -66,6 +67,8 @@ export default function App() {
                 <Route path="/" element={<LandingPage />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
+                {/* Opened on the student's phone from the exam QR code (no login; token in URL) */}
+                <Route path="/phone-camera/:token" element={<PhoneCameraPage />} />
 
                 {/* Student flow (own header per page, no sidebar) */}
                 <Route

@@ -14,6 +14,7 @@ Student -> Server:
   'client:violation'  { type }                   -> browser-detected event (see CLIENT_VIOLATION_TYPES)
   'audio:level'       { level (0-1 RMS) }        -> voice-activity tracking (Talking Detected)
   'heartbeat'         {}
+  'phone:host' / 'phone:join' / 'phone:signal'  -> phone-as-camera pairing (see section below)
 
 Server -> Student (own data only):
   'students:tick'  [own student]
@@ -35,7 +36,7 @@ import time
 
 import socketio
 
-from app.core.security import decode_token
+from app.core.security import decode_token, create_phone_camera_token, PHONE_CAMERA_TOKEN_TYPE
 from app.core.refs import ATTEMPT, EXAM, decode_ref, encode_ref
 from app.core.config import settings
 from app.realtime.manager import manager
@@ -155,6 +156,7 @@ async def connect(sid, environ):
 async def disconnect(sid):
     _last_frame_at.pop((sid, "webcam"), None)
     _last_frame_at.pop((sid, "screen"), None)
+    await _phone_disconnect(sid)
     s = manager.disconnect(sid)
     if s:
         ticks.request(s.exam_id)
@@ -199,7 +201,7 @@ async def dashboard_join(sid, data):
     return {"ok": True}
 
 
-def _load_student_attempt(user_id: int, attempt_id: int):
+def _load_student_attempt(user_id: int, attempt_id: int, allowed_statuses: tuple[str, ...] = ("in_progress",)):
     db = SessionLocal()
     try:
         user = db.get(User, user_id)
@@ -209,7 +211,7 @@ def _load_student_attempt(user_id: int, attempt_id: int):
         prof = db.query(Student).filter(Student.user_id == user_id).first()
         if not prof or attempt.student_id != prof.id:
             return None, "forbidden"
-        if attempt.status != "in_progress":
+        if attempt.status not in allowed_statuses:
             return None, "attempt is not in progress"
         return {
             "attempt_id": attempt.id, "exam_id": attempt.exam_id, "student_code": prof.student_id,
@@ -228,6 +230,8 @@ async def student_join(sid, data):
         return {"ok": False, "error": "attempt_id required"}
     try:
         payload = decode_token(token)
+        if payload.get("type") != "access":
+            return {"ok": False, "error": "invalid token"}
         user_id = int(payload["sub"])
         attempt_id = decode_ref(ATTEMPT, attempt_id)
     except Exception:
@@ -318,6 +322,106 @@ async def frame_webcam(sid, data):
     s.last_activity = time.time()
     await sio.emit("frame:webcam", {"studentId": s.student_id, "image": image}, room=_room(s.exam_id))
     pipeline.submit_webcam(s, image)
+
+
+# ---------------------------------------------------------------------------
+# Phone-as-camera pairing (WebRTC signaling only; media flows peer-to-peer).
+#
+#   Laptop (student) -> 'phone:host'   { token, attempt_id } -> { ok, pair_token }
+#   Phone            -> 'phone:join'   { pair_token }        -> { ok }
+#   Either side      -> 'phone:signal' { data }              -> relayed to the other side
+#   Server -> laptop:  'phone:peer'    { connected }
+#   Server -> phone:   'phone:host-left' / 'phone:replaced'
+# ---------------------------------------------------------------------------
+_phone_peers: dict[str, tuple[int, str]] = {}   # sid -> (attempt_id, "host" | "phone")
+MAX_SIGNAL_CHARS = 64_000
+# Pairing happens during the pre-exam checklist, before the attempt is in_progress.
+PHONE_ATTEMPT_STATUSES = ("checklist", "in_progress")
+
+
+def _phone_room(attempt_id: int) -> str:
+    return f"phone:{attempt_id}"
+
+
+def _phone_sids(attempt_id: int, role: str, exclude: str | None = None) -> list[str]:
+    return [s for s, (a, r) in _phone_peers.items() if a == attempt_id and r == role and s != exclude]
+
+
+@sio.on("phone:host")
+async def phone_host(sid, data):
+    token = (data or {}).get("token", "")
+    attempt_ref = (data or {}).get("attempt_id")
+    if not attempt_ref:
+        return {"ok": False, "error": "attempt_id required"}
+    try:
+        payload = decode_token(token)
+        if payload.get("type") != "access":
+            return {"ok": False, "error": "invalid token"}
+        user_id = int(payload["sub"])
+        attempt_id = decode_ref(ATTEMPT, attempt_ref)
+    except Exception:
+        return {"ok": False, "error": "invalid token"}
+    info, error = await asyncio.to_thread(_load_student_attempt, user_id, attempt_id, PHONE_ATTEMPT_STATUSES)
+    if error:
+        return {"ok": False, "error": error}
+
+    for old in _phone_sids(attempt_id, "host", exclude=sid):
+        _phone_peers.pop(old, None)
+        await sio.leave_room(old, _phone_room(attempt_id))
+    _phone_peers[sid] = (attempt_id, "host")
+    await sio.enter_room(sid, _phone_room(attempt_id))
+    pair_token = create_phone_camera_token(user_id, encode_ref(ATTEMPT, attempt_id))
+    return {"ok": True, "pair_token": pair_token, "phone_connected": bool(_phone_sids(attempt_id, "phone"))}
+
+
+@sio.on("phone:join")
+async def phone_join(sid, data):
+    token = (data or {}).get("pair_token", "")
+    try:
+        payload = decode_token(token)
+        if payload.get("type") != PHONE_CAMERA_TOKEN_TYPE:
+            return {"ok": False, "error": "invalid token"}
+        user_id = int(payload["sub"])
+        attempt_id = decode_ref(ATTEMPT, payload["attempt"])
+    except Exception:
+        return {"ok": False, "error": "This pairing link is invalid or has expired."}
+    info, error = await asyncio.to_thread(_load_student_attempt, user_id, attempt_id, PHONE_ATTEMPT_STATUSES)
+    if error:
+        return {"ok": False, "error": "This exam attempt is no longer active."}
+    if not _phone_sids(attempt_id, "host"):
+        return {"ok": False, "error": "Open the exam on your computer first, then scan the QR code again."}
+
+    # Only one phone per attempt: a newer scan replaces the previous one.
+    for old in _phone_sids(attempt_id, "phone", exclude=sid):
+        _phone_peers.pop(old, None)
+        await sio.emit("phone:replaced", {}, to=old)
+        await sio.leave_room(old, _phone_room(attempt_id))
+    _phone_peers[sid] = (attempt_id, "phone")
+    await sio.enter_room(sid, _phone_room(attempt_id))
+    await sio.emit("phone:peer", {"connected": True}, room=_phone_room(attempt_id), skip_sid=sid)
+    return {"ok": True}
+
+
+@sio.on("phone:signal")
+async def phone_signal(sid, data):
+    peer = _phone_peers.get(sid)
+    if not peer:
+        return
+    body = (data or {}).get("data")
+    if body is None or len(str(body)) > MAX_SIGNAL_CHARS:
+        return
+    await sio.emit("phone:signal", {"data": body}, room=_phone_room(peer[0]), skip_sid=sid)
+
+
+async def _phone_disconnect(sid: str) -> None:
+    peer = _phone_peers.pop(sid, None)
+    if not peer:
+        return
+    attempt_id, role = peer
+    if role == "phone":
+        await sio.emit("phone:peer", {"connected": False}, room=_phone_room(attempt_id), skip_sid=sid)
+    else:
+        await sio.emit("phone:host-left", {}, room=_phone_room(attempt_id), skip_sid=sid)
 
 
 async def _sweep_idle_sessions() -> None:
