@@ -21,6 +21,13 @@ import { isAnswerable, isAnswered, parseResponse, serializeResponse } from '../.
 
 const ScientificCalculator = lazy(() => import('../../components/calculator/ScientificCalculator'))
 
+const IDENTITY_ALERT_TEXT = {
+  'Different Person Detected': 'Face mismatch — the face at the camera does not match your registered identity.',
+  'Face Covered': 'Face covered — keep your face fully visible to the camera.',
+  'Face Obstructed': 'Face covered — keep your face fully visible to the camera.',
+  'No Face Detected': 'Face not visible — stay in front of the camera.',
+}
+
 const WEBCAM_FPS_MS = 500
 const SCREEN_FPS_MS = 2000
 const SCREEN_MAX_WIDTH = 1600
@@ -79,6 +86,7 @@ export default function ExamPage() {
   const camVideoRef = useRef(null)
   const screenVideoRef = useRef(null)
   const ignoreMediaEndRef = useRef(false)
+  const recoveringRef = useRef(false)
 
   useEffect(() => {
     if (!attemptId || (storedExamId != null && String(storedExamId) !== String(examId))) {
@@ -159,13 +167,18 @@ export default function ExamPage() {
 
     const offs = [
       studentStreamService.on('connected', (v) => setConnected(v)),
+      // Only identity problems are shown to the student; every other alert
+      // (gaze, tab switch, …) goes to the teacher alone.
+      studentStreamService.on('alert', (payload) => {
+        if (!payload?.student || payload.student.id !== myStudentIdRef.current) return
+        const text = IDENTITY_ALERT_TEXT[payload.alert?.type]
+        if (text) showBanner({ text, severity: payload.alert.severity })
+      }),
       studentStreamService.on('students:tick', (list) => {
         const mine = list.find((s) => s.id === myStudentIdRef.current)
         if (mine?.identity) {
           setIdentity(mine.identity)
-          // Only a missing reference (a technical problem) asks the student to
-          // re-verify; mismatches are reported to the teacher silently.
-          setIdentityNeedsRecovery(mine.identity.status === 'unavailable')
+          setIdentityNeedsRecovery(['mismatch', 'unavailable'].includes(mine.identity.status))
         }
       }),
     ]
@@ -226,6 +239,9 @@ export default function ExamPage() {
   }
 
   const recoverPermission = async (key) => {
+    // The browser's camera/screen picker forces the page out of fullscreen.
+    // That is not the student leaving fullscreen, so don't flag it.
+    recoveringRef.current = true
     setPermissionRecovery((current) => ({ ...current, [key]: { checking: true, error: null } }))
     try {
       if (key === 'camera') {
@@ -259,6 +275,12 @@ export default function ExamPage() {
         ...current,
         [key]: { checking: false, error: mediaErrorMessage(error, key === 'screenShare' ? 'screen sharing' : key) },
       }))
+    } finally {
+      // Go straight back to fullscreen while the button click still counts as
+      // a user gesture. If the picker took too long for that, the next click
+      // or key press anywhere on the page restores it (see below).
+      await enterFullscreen()
+      recoveringRef.current = false
     }
   }
 
@@ -273,7 +295,7 @@ export default function ExamPage() {
     const onPaste = () => reportViolation('paste', 'Paste detected', 'medium')
     const onFullscreenChange = () => {
       const isFs = !!document.fullscreenElement
-      if (!isFs && everEnteredFullscreenRef.current) {
+      if (!isFs && everEnteredFullscreenRef.current && !recoveringRef.current) {
         reportViolation('fullscreen_exit', 'Exited fullscreen mode', 'high')
       }
       if (isFs) everEnteredFullscreenRef.current = true
@@ -298,11 +320,14 @@ export default function ExamPage() {
   // button). If the student leaves fullscreen, or reloads the page, the next
   // click or key press puts it back — browsers only allow fullscreen from a
   // user gesture, so there is no way to do it without one.
+  //
+  // Permission buttons (data-keep-activation) are skipped: a fullscreen
+  // request uses up the click's user gesture, which getDisplayMedia /
+  // getUserMedia need. recoverPermission() re-enters fullscreen itself.
   useEffect(() => {
-    const restore = () => {
-      if (!document.fullscreenElement && !ignoreMediaEndRef.current) {
-        document.documentElement.requestFullscreen?.().catch(() => {})
-      }
+    const restore = (event) => {
+      if (event.target?.closest?.('[data-keep-activation]')) return
+      if (!ignoreMediaEndRef.current) enterFullscreen()
     }
     document.addEventListener('pointerdown', restore, true)
     document.addEventListener('keydown', restore, true)
@@ -657,7 +682,7 @@ export default function ExamPage() {
               <StatusRow
                 icon={ScanFace}
                 label="Identity"
-                ok={identity.status !== 'unavailable'}
+                ok={identity.status === 'verified'}
                 text={identityLabel(identity)}
               />
             )}
@@ -675,6 +700,7 @@ export default function ExamPage() {
                         size="sm"
                         variant="outline"
                         icon={Icon}
+                        data-keep-activation
                         onClick={() => recoverPermission(key)}
                         disabled={recovery.checking}
                       >
@@ -729,12 +755,24 @@ export default function ExamPage() {
 
 function identityLabel(identity) {
   switch (identity?.status) {
-    // Detailed results (mismatch, face covered, …) are for the teacher only.
-    case 'unavailable':
-      return 'Needs verification'
+    case 'verified':
+      return identity.similarity != null ? `Verified · ${Math.round(identity.similarity * 100)}%` : 'Verified'
+    case 'mismatch':
+      return 'Mismatch!'
+    case 'no_face':
+      return 'Face not visible'
+    case 'obstructed':
+      return 'Face covered'
+    case 'verifying':
+      return 'Verifying…'
     default:
-      return 'Active'
+      return 'Monitoring…'
   }
+}
+
+function enterFullscreen() {
+  if (document.fullscreenElement || !document.documentElement.requestFullscreen) return Promise.resolve()
+  return document.documentElement.requestFullscreen().catch(() => {})
 }
 
 function StatusRow({ icon: Icon, label, ok, text = 'Active' }) {

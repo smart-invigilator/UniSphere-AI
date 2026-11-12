@@ -128,7 +128,7 @@ export function DatePicker({ label, value, onChange, min, error, placeholder = '
 }
 
 const HOURS_12 = Array.from({ length: 12 }, (_, i) => i + 1)
-const MINUTE_STEPS = Array.from({ length: 12 }, (_, i) => i * 5)
+const MINUTES = Array.from({ length: 60 }, (_, i) => i)
 
 function Column({ title, children }) {
   return (
@@ -166,7 +166,6 @@ export function TimePicker({ label, value, onChange, error, placeholder = 'Selec
     const hh = (nextH12 % 12) + (nextPeriod === 'PM' ? 12 : 0)
     onChange(`${pad(hh)}:${pad(nextMin)}`)
   }
-  const minutes = min != null && !MINUTE_STEPS.includes(min) ? [...MINUTE_STEPS, min].sort((a, b) => a - b) : MINUTE_STEPS
   const display = m ? `${h12}:${pad(min)} ${period}` : null
 
   return (
@@ -189,7 +188,7 @@ export function TimePicker({ label, value, onChange, error, placeholder = 'Selec
               ))}
             </Column>
             <Column title="Min">
-              {minutes.map((mi) => (
+              {MINUTES.map((mi) => (
                 <Option key={mi} active={mi === min} onClick={() => commit(h12 ?? 9, mi, period ?? 'AM')}>{pad(mi)}</Option>
               ))}
             </Column>

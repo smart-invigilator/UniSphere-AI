@@ -331,6 +331,10 @@ def _get_or_create_attempt(exam: ExamSession, prof: Student, db: DBSession) -> E
                 raise HTTPException(409, "Could not start the exam right now. Please try again.")
     if attempt.status == "not_started":
         attempt.status = "checklist"
+    # Identity and liveness are proof that the person is present *right now*,
+    # so every new join must redo them — a pass from an earlier visit (tab
+    # closed, back button, reload) never carries over.
+    attempt.identity_verified = False
     attempt.liveness_ok = False
     db.commit()
     db.refresh(attempt)

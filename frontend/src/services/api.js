@@ -60,6 +60,10 @@ function formatValidationMessage(detail) {
         if (item?.type === 'string_too_short' && item?.ctx?.min_length) {
           return `${label} must be at least ${item.ctx.min_length} characters long.`
         }
+        if (item?.type === 'value_error' && item?.msg) {
+          // Custom validator messages are already full sentences.
+          return item.msg.replace(/^Value error,\s*/, '')
+        }
         return item?.msg ? `${label}: ${item.msg}` : null
       })
       .filter(Boolean)

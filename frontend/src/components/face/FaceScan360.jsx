@@ -16,6 +16,14 @@ const FRONT_MAX_YAW = 10
 // complete the step — the student has to look clearly over their shoulder.
 const REQUIRED_TURN_YAW = 30
 const GAUGE_RANGE = 45
+// A side-profile frame (face too turned for the landmark model) carries no
+// direction of its own. It is credited to a side only when the landmark model
+// saw the head turned that way, at least this far, just before.
+const PROFILE_HANDOFF_YAW = 25
+const PROFILE_HANDOFF_MS = 1500
+// Consecutive qualifying frames needed before a side counts, so one noisy
+// reading can't complete it.
+const STABLE_FRAMES = 2
 const SMOOTHING = 0.35
 const FAST_TURN_DEG = 14
 
@@ -153,7 +161,8 @@ export default function FaceScan360({ title = 'Face Scan', description, onComple
   const inFlightRef = useRef(false)
   const capturesRef = useRef({})
   const lastCaptureRef = useRef({})
-  const lastSideRef = useRef(null)
+  const lastMeshRef = useRef(null)
+  const streakRef = useRef({ side: null, n: 0 })
   const startedAtRef = useRef(0)
   const minimumAtRef = useRef(0)
   const finishedRef = useRef(false)
@@ -208,11 +217,11 @@ export default function FaceScan360({ title = 'Face Scan', description, onComple
     return true
   }
 
-  const moveMarker = (res) => {
+  const moveMarker = (res, profileSide) => {
     if (res.kind === 'profile') {
-      const side = lastSideRef.current === 'right' ? 'right' : 'left'
-      smoothYawRef.current = side === 'left' ? GAUGE_RANGE : -GAUGE_RANGE
-      setMarkerPct(side === 'left' ? 2 : 98)
+      if (!profileSide) return false
+      smoothYawRef.current = profileSide === 'left' ? GAUGE_RANGE : -GAUGE_RANGE
+      setMarkerPct(profileSide === 'left' ? 2 : 98)
       return false
     }
     if (res.yaw == null) return false
@@ -253,24 +262,37 @@ export default function FaceScan360({ title = 'Face Scan', description, onComple
         setFeedback(res.message || '')
         return
       }
+      const now = Date.now()
       let label = res.label
+      let side = null
+      let deep = false
       if (res.kind === 'profile') {
-        const side = lastSideRef.current || (nextStage(groupsDone(capturesRef.current)) === 'right' ? 'right' : 'left')
-        lastSideRef.current = side
-        label = `profile_${side}`
-      } else {
-        const side = sideOf(label)
-        if (side === 'left' || side === 'right') {
-          lastSideRef.current = side
-          // Not turned far enough yet: keep the frame (the server re-labels
-          // mesh frames from their yaw anyway) but file it as a slight turn so
-          // it can't complete the side.
-          if (res.yaw != null && Math.abs(res.yaw) < REQUIRED_TURN_YAW) label = `${side}_25`
+        const m = lastMeshRef.current
+        if (m && now - m.at <= PROFILE_HANDOFF_MS && Math.abs(m.yaw) >= PROFILE_HANDOFF_YAW) {
+          side = m.yaw > 0 ? 'left' : 'right'
+          deep = true
+          label = `profile_${side}`
+        } else {
+          // Direction unknown (e.g. right after a small turn the other way):
+          // never guess a side for it.
+          label = null
         }
+      } else {
+        if (res.yaw != null) lastMeshRef.current = { yaw: res.yaw, at: now }
+        side = sideOf(label)
+        deep = (side === 'left' || side === 'right') && res.yaw != null && Math.abs(res.yaw) >= REQUIRED_TURN_YAW
       }
-      const tooFast = moveMarker(res)
+      const streak = streakRef.current
+      streakRef.current = deep ? { side, n: streak.side === side ? streak.n + 1 : 1 } : { side: null, n: 0 }
+      if ((side === 'left' || side === 'right') && (!deep || streakRef.current.n < STABLE_FRAMES)) {
+        // Not (yet) a clear, held turn: keep mesh frames as a slight turn so
+        // they can't complete the side (the server re-labels mesh frames from
+        // their yaw anyway); drop unconfirmed profile frames.
+        label = res.kind === 'profile' ? null : `${side}_25`
+      }
+      const tooFast = moveMarker(res, res.kind === 'profile' ? side : null)
       const before = groupsDone(capturesRef.current)
-      store(label, full)
+      if (label) store(label, full)
       const after = groupsDone(capturesRef.current)
       const stage = nextStage(after)
       const newlyDone = ['front', 'left', 'right'].find((g) => !before[g] && after[g])
@@ -303,7 +325,8 @@ export default function FaceScan360({ title = 'Face Scan', description, onComple
     setError('')
     capturesRef.current = {}
     lastCaptureRef.current = {}
-    lastSideRef.current = null
+    lastMeshRef.current = null
+    streakRef.current = { side: null, n: 0 }
     minimumAtRef.current = 0
     finishedRef.current = false
     smoothYawRef.current = null

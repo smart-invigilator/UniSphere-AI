@@ -1,6 +1,8 @@
 import { useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Shield, User, Mail, Lock, GraduationCap, ClipboardCheck } from 'lucide-react'
+import { Shield, User, Mail, GraduationCap, ClipboardCheck, CheckCircle2, Circle } from 'lucide-react'
+import PasswordInput from '../components/common/PasswordInput'
+import { PASSWORD_RULES, passwordProblems } from '../utils/password'
 import { useAuth } from '../context/AuthContext'
 import { useNotify } from '../context/NotifyContext'
 import Button from '../components/common/Button'
@@ -28,8 +30,9 @@ export default function RegisterPage() {
       notify.error("Passwords don't match.")
       return
     }
-    if (form.password.length < 6) {
-      notify.error('Password must be at least 6 characters long.')
+    const problems = passwordProblems(form.password)
+    if (problems.length) {
+      notify.error(`Password must have: ${problems.join(', ').toLowerCase()}.`)
       return
     }
     if (form.role === 'student' && !faceScan?.length) {
@@ -86,8 +89,20 @@ export default function RegisterPage() {
           <form onSubmit={submit} className="mt-5 space-y-4">
             <Field icon={User} id="name" label="Full Name" value={form.name} onChange={set('name')} placeholder="Jordan Lee" required />
             <Field icon={Mail} id="email" type="email" label="Email" value={form.email} onChange={set('email')} placeholder="you@campus.edu" required />
-            <Field icon={Lock} id="password" type="password" minLength={6} label="Password" value={form.password} onChange={set('password')} placeholder="••••••••" required />
-            <Field icon={Lock} id="confirm" type="password" minLength={6} label="Confirm Password" value={form.confirm} onChange={set('confirm')} placeholder="••••••••" required />
+            <div>
+              <PasswordInput id="password" label="Password" autoComplete="new-password" value={form.password} onChange={set('password')} placeholder="••••••••" required />
+              <ul className="mt-2 grid grid-cols-1 gap-1 text-[11px] sm:grid-cols-2">
+                {PASSWORD_RULES.map((r) => {
+                  const ok = r.test(form.password)
+                  return (
+                    <li key={r.id} className={`flex items-center gap-1.5 ${ok ? 'text-emerald-600' : 'text-slate-400'}`}>
+                      {ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />} {r.label}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+            <PasswordInput id="confirm" label="Confirm Password" autoComplete="new-password" value={form.confirm} onChange={set('confirm')} placeholder="••••••••" required />
             {form.role === 'student' && (
               <FaceScan360
                 key={scanKey}

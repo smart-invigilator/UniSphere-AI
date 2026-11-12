@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import {
   Camera, Mic, MonitorUp, ScanFace, Fingerprint, ShieldCheck,
-  CheckCircle2, Loader2, ArrowLeft, ArrowRight, XCircle, RotateCcw,
+  CheckCircle2, Loader2, ArrowLeft, ArrowRight, XCircle, RotateCcw, LogOut,
 } from 'lucide-react'
 import { useExams } from '../../context/ExamContext'
 import { useProctorSession } from '../../context/ProctorSessionContext'
@@ -31,7 +31,7 @@ export default function PreExamCheck() {
   const { findExam, startAttempt } = useExams()
   const {
     cameraStream, setCameraStream, micStream, setMicStream, screenStream, setScreenStream,
-    setAttempt: persistAttempt,
+    setAttempt: persistAttempt, stopAll,
   } = useProctorSession()
   const navigate = useNavigate()
 
@@ -70,15 +70,15 @@ export default function PreExamCheck() {
         // past — it says nothing about *right now*, and MediaStream
         // objects never survive a page reload. Trusting the DB flag alone
         // would silently skip these steps with no real stream behind
-        // them, leaving nothing to send once the exam starts. Identity /
-        // liveness don't need a live stream to still be considered valid,
-        // so those stay purely DB-driven.
+        // them, leaving nothing to send once the exam starts. Identity and
+        // liveness must be redone on every join (the server resets them on
+        // start too), so a pass from an earlier visit never carries over.
         setStatus({
           camera: (a.camera_ok && cameraStream) ? 'passed' : 'pending',
           microphone: (a.microphone_ok && micStream) ? 'passed' : 'pending',
           screenShare: (a.screen_ok && screenStream) ? 'passed' : 'pending',
-          identity: a.identity_verified ? 'passed' : 'pending',
-          liveness: a.liveness_ok ? 'passed' : 'pending',
+          identity: 'pending',
+          liveness: 'pending',
         })
       } catch (e) {
         if (!cancelled) setInitError(e.message || 'Could not start this exam attempt')
@@ -106,6 +106,13 @@ export default function PreExamCheck() {
 
   const setKeyStatus = (key, s) => setStatus((prev) => ({ ...prev, [key]: s }))
   const setKeyError = (key, msg) => setStepError((prev) => ({ ...prev, [key]: msg }))
+
+  // Leave the checklist: release camera / mic / screen share so nothing keeps
+  // recording after the student is back on the dashboard.
+  const exitCheck = () => {
+    stopAll()
+    navigate('/student/dashboard')
+  }
 
   const next = () => setStepIndex((i) => Math.min(i + 1, STEPS.length - 1))
   const back = () => setStepIndex((i) => Math.max(i - 1, 0))
@@ -251,12 +258,16 @@ export default function PreExamCheck() {
   // specific millisecond. See PreExamCheck's liveness/step usage below.
   const LIVENESS_REACTION_DELAY_MS = 600   // time to read + start reacting before we check anything
   const LIVENESS_POLL_INTERVAL_MS = 350    // how often we re-check while waiting
+  const LIVENESS_STABLE_FRAMES = 2         // consecutive passing frames needed per step
   const LIVENESS_POLL_WINDOW_MS = 6000     // total time allowed to complete the (larger) movement
 
   const pollLivenessStep = async (step, extraPayload) => {
     await sleep(LIVENESS_REACTION_DELAY_MS)
     const deadline = Date.now() + LIVENESS_POLL_WINDOW_MS
     let lastResult = null
+    // The pose must hold for consecutive frames — a single noisy reading (or
+    // a head swinging through) never passes a step on its own.
+    let streak = 0
     while (Date.now() < deadline) {
       const frame = captureFrame(camVideoRef.current, 0.85)
       if (frame) {
@@ -265,14 +276,34 @@ export default function PreExamCheck() {
             step, frame, ...extraPayload,
           })
           lastResult = res
-          if (res.step_ok) return { ok: true, frame, result: res }
+          streak = res.step_ok ? streak + 1 : 0
+          if (streak >= LIVENESS_STABLE_FRAMES) return { ok: true, frame, result: res }
         } catch (e) {
+          streak = 0
           lastResult = { message: apiErrorMessage(e) }
         }
       }
       await sleep(LIVENESS_POLL_INTERVAL_MS)
     }
     return { ok: false, frame: null, result: lastResult }
+  }
+
+  const LIVENESS_STEP_FAIL = {
+    straight: 'Straight-ahead position not detected. Please look straight at the camera and do the step again.',
+    left: 'Left position not detected. Please turn your head to the left, hold it there, and do the step again.',
+    right: 'Right position not detected. Please turn your head to the right, hold it there, and do the step again.',
+  }
+  // A failed step must never show a success message from the last polled
+  // frame (e.g. a single passing frame that wasn't held long enough). Only
+  // surface the server's reason when it actually describes a failure.
+  const livenessFailMessage = (step, result) =>
+    (result && result.step_ok !== true && result.message) || LIVENESS_STEP_FAIL[step]
+
+  const failLivenessStep = (step, result) => {
+    setKeyStatus('liveness', 'failed')
+    setKeyError('liveness', livenessFailMessage(step, result))
+    setLivenessPrompt('Liveness check not completed. Please start the check again and follow each step.')
+    setLivenessProgress(0)
   }
 
   const runLiveness = async () => {
@@ -295,10 +326,7 @@ export default function PreExamCheck() {
       setLivenessProgress(10)
       const straight = await pollLivenessStep('straight', {})
       if (!straight.ok) {
-        setKeyStatus('liveness', 'failed')
-        setKeyError('liveness', straight.result?.message || 'Could not confirm a straight-ahead position. Please try again from the beginning.')
-        setLivenessPrompt('Please try again from the beginning.')
-        setLivenessProgress(0)
+        failLivenessStep('straight', straight.result)
         return
       }
       const center = straight.frame
@@ -307,10 +335,7 @@ export default function PreExamCheck() {
       setLivenessProgress(40)
       const left = await pollLivenessStep('left', { center_frame: center })
       if (!left.ok) {
-        setKeyStatus('liveness', 'failed')
-        setKeyError('liveness', left.result?.message || 'Could not confirm your left-facing position. Please try again from the beginning.')
-        setLivenessPrompt('Please try again from the beginning.')
-        setLivenessProgress(0)
+        failLivenessStep('left', left.result)
         return
       }
 
@@ -318,10 +343,7 @@ export default function PreExamCheck() {
       setLivenessProgress(70)
       const right = await pollLivenessStep('right', { center_frame: center })
       if (!right.ok) {
-        setKeyStatus('liveness', 'failed')
-        setKeyError('liveness', right.result?.message || 'Could not confirm your right-facing position. Please try again from the beginning.')
-        setLivenessPrompt('Please try again from the beginning.')
-        setLivenessProgress(0)
+        failLivenessStep('right', right.result)
         return
       }
 
@@ -333,7 +355,7 @@ export default function PreExamCheck() {
       setLivenessProgress(100)
       setKeyStatus('liveness', res.liveness_ok ? 'passed' : 'failed')
       if (!res.liveness_ok) setKeyError('liveness', res.message)
-      setLivenessPrompt(res.liveness_ok ? 'Liveness confirmed.' : res.message)
+      setLivenessPrompt(res.liveness_ok ? 'Liveness verified successfully. You can continue to the next step.' : res.message)
     } catch (e) {
       setKeyStatus('liveness', 'failed')
       setKeyError('liveness', apiErrorMessage(e))
@@ -384,9 +406,12 @@ export default function PreExamCheck() {
       <video ref={camVideoRef} autoPlay muted playsInline className="fixed left-[-9999px] top-0 h-32 w-48 opacity-0" />
 
       <header className="border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
-        <div className="mx-auto max-w-3xl">
-          <p className="text-xs text-slate-400">Pre-Exam Security Checklist</p>
-          <h1 className="text-sm font-bold text-slate-900 dark:text-white">{exam.title}</h1>
+        <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-xs text-slate-400">Pre-Exam Security Checklist</p>
+            <h1 className="truncate text-sm font-bold text-slate-900 dark:text-white">{exam.title}</h1>
+          </div>
+          <Button variant="outline" size="sm" icon={LogOut} onClick={exitCheck}>Exit</Button>
         </div>
       </header>
 
@@ -492,7 +517,9 @@ export default function PreExamCheck() {
 
         {currentKey !== 'ready' && (
           <div className="mt-5 flex items-center justify-between">
-            <Button variant="ghost" icon={ArrowLeft} onClick={back} disabled={stepIndex === 0}>Back</Button>
+            {stepIndex === 0
+              ? <Button variant="ghost" icon={LogOut} onClick={exitCheck}>Exit</Button>
+              : <Button variant="ghost" icon={ArrowLeft} onClick={back}>Back</Button>}
             <Button iconRight={ArrowRight} onClick={next} disabled={currentStatus !== 'passed'}>
               {stepIndex === STEPS.length - 2 ? 'Continue to Summary' : 'Continue'}
             </Button>

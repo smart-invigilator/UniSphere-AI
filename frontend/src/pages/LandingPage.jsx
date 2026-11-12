@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import {
   Shield, ScanFace, MonitorSmartphone, Mic, Eye, Users, ClipboardCheck, Radar,
-  ArrowRight, PlayCircle, GraduationCap, LayoutDashboard, CheckCircle2, KeyRound,
+  ArrowRight, GraduationCap, LayoutDashboard, CheckCircle2, KeyRound,
 } from 'lucide-react'
 
 const FEATURES = [
@@ -69,13 +69,6 @@ export default function LandingPage() {
               <Link to="/register" className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-3 text-sm font-semibold text-white hover:bg-brand-700">
                 Get Started <ArrowRight className="h-4 w-4" />
               </Link>
-              <Link to="/login" className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800">
-                <PlayCircle className="h-4 w-4" /> View Demo
-              </Link>
-            </div>
-            <div className="mt-8 flex items-center gap-6 text-xs text-slate-400">
-              <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> No backend required to try</span>
-              <span className="inline-flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" /> Student & teacher demo modes</span>
             </div>
           </div>
 

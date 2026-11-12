@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { Shield, GraduationCap, ClipboardCheck, Mail, Lock, ArrowLeft } from 'lucide-react'
+import { Shield, Mail, ArrowLeft } from 'lucide-react'
+import PasswordInput from '../components/common/PasswordInput'
 import { useAuth } from '../context/AuthContext'
 import { useNotify } from '../context/NotifyContext'
 import Button from '../components/common/Button'
@@ -41,20 +42,6 @@ export default function LoginPage() {
       handleLoginResult(await login({ email, password }))
     } catch (err) {
       notify.error(err.message || 'Login failed')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const quickLogin = async (r) => {
-    setLoading(true)
-    try {
-      const creds = r === 'teacher'
-        ? { email: 'teacher@proctor.io', password: 'teacher123' }
-        : { email: 'student1@proctor.io', password: 'student123' }
-      handleLoginResult(await login(creds))
-    } catch (err) {
-      notify.error(err.message || 'Demo login failed')
     } finally {
       setLoading(false)
     }
@@ -135,17 +122,10 @@ export default function LoginPage() {
                     />
                   </div>
                 </div>
-                <div>
-                  <label htmlFor="password" className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">Password</label>
-                  <div className="relative">
-                    <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                    <input
-                      id="password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="auth-input w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm focus:border-brand-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-white"
-                    />
-                  </div>
-                </div>
+                <PasswordInput
+                  id="password" label="Password" required value={password}
+                  onChange={(e) => setPassword(e.target.value)} placeholder="••••••••"
+                />
                 <div className="flex items-center justify-between text-xs">
                   <label className="flex items-center gap-1.5 text-slate-500 dark:text-slate-400">
                     <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="auth-checkbox h-4 w-4 rounded border-slate-300" />
@@ -155,15 +135,6 @@ export default function LoginPage() {
                 </div>
                 <Button type="submit" className="w-full" size="lg" disabled={loading}>{loading ? 'Logging in…' : 'Log in'}</Button>
               </form>
-
-              <div className="my-5 flex items-center gap-3 text-[11px] font-medium uppercase tracking-wide text-slate-400">
-                <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" /> Or try a quick demo <div className="h-px flex-1 bg-slate-200 dark:bg-slate-800" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" icon={GraduationCap} disabled={loading} onClick={() => quickLogin('student')}>Continue as Student</Button>
-                <Button variant="outline" icon={ClipboardCheck} disabled={loading} onClick={() => quickLogin('teacher')}>Continue as Teacher</Button>
-              </div>
 
               <p className="mt-5 text-center text-xs text-slate-500 dark:text-slate-400">
                 Don't have an account? <Link to="/register" className="font-semibold text-brand-600 hover:underline">Register</Link>

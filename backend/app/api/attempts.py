@@ -40,6 +40,15 @@ router = APIRouter(prefix="/attempts", tags=["attempts"])
 # relative to the straight-ahead frame) for the liveness check to accept it.
 LIVENESS_STRAIGHT_MAX_YAW = 10.0
 LIVENESS_YAW_THRESHOLD = 20.0
+# Each turn must also point this far to the requested side in absolute terms,
+# so a slightly-off "straight" frame can't make a small turn the other way count.
+LIVENESS_MIN_ABS_YAW = 22.0
+
+
+def _turned(step: str, yaw: float, center_yaw: float) -> bool:
+    """yaw > 0 is the student's own LEFT (see analyzer.head_yaw)."""
+    sign = 1.0 if step == "left" else -1.0
+    return sign * (yaw - center_yaw) >= LIVENESS_YAW_THRESHOLD and sign * yaw >= LIVENESS_MIN_ABS_YAW
 DEADLINE_GRACE_SECONDS = 60 
 
 
@@ -213,9 +222,7 @@ def liveness_check(attempt_id: AttemptIn, data: LivenessCheckIn, db: DBSession =
     if yaw_l is None or yaw_r is None:
         return LivenessCheckOut(liveness_ok=False, message="Couldn't measure head pose — try again.")
 
-    turned_apart = (yaw_l - yaw_c) * (yaw_r - yaw_c) < 0
-    magnitude_ok = abs(yaw_l - yaw_c) > LIVENESS_YAW_THRESHOLD and abs(yaw_r - yaw_c) > LIVENESS_YAW_THRESHOLD
-    ok = turned_apart and magnitude_ok
+    ok = abs(yaw_c) <= LIVENESS_STRAIGHT_MAX_YAW and _turned("left", yaw_l, yaw_c) and _turned("right", yaw_r, yaw_c)
 
     if ok:
         a.liveness_ok = True
@@ -224,7 +231,7 @@ def liveness_check(attempt_id: AttemptIn, data: LivenessCheckIn, db: DBSession =
                                  message="Liveness verified.")
     return LivenessCheckOut(
         liveness_ok=False, yaw_left=yaw_l, yaw_right=yaw_r,
-        message="Head turn not detected clearly enough. Turn further left and right and try again.",
+        message="Head turn not detected clearly enough. Please turn your head further to the left and right and do the check again.",
     )
 
 
@@ -238,17 +245,18 @@ def liveness_step(attempt_id: AttemptIn, data: LivenessStepIn, db: DBSession = D
 
     frame = decode_b64_jpeg(data.frame)
     if frame is None:
-        return LivenessStepOut(step_ok=False, message="Your camera frame could not be read. Please try again.")
+        return LivenessStepOut(step_ok=False, message="Camera image could not be read. Check your camera and do the step again.")
     landmarks = analyzer.detect_face(frame, strict=False)
     if landmarks is None:
-        return LivenessStepOut(step_ok=False, message="Your face was not clearly detected. Please try again.")
+        return LivenessStepOut(step_ok=False, message="Face not detected. Keep your face inside the camera frame in good light and do the step again.")
     yaw = analyzer.head_yaw(frame, landmarks)
     if yaw is None:
-        return LivenessStepOut(step_ok=False, message="Your head position could not be measured. Please try again.")
+        return LivenessStepOut(step_ok=False, message="Head position could not be measured. Keep your whole face visible and do the step again.")
 
     if data.step == "straight":
         step_ok = abs(yaw) <= LIVENESS_STRAIGHT_MAX_YAW
-        message = "Look straight at the camera and try again." if not step_ok else "Straight-ahead position confirmed."
+        message = ("Straight-ahead position not detected. Please look straight at the camera and do the step again."
+                   if not step_ok else "Straight-ahead position detected.")
     else:
         if not data.center_frame:
             raise HTTPException(400, "A straight-ahead frame is required")
@@ -256,11 +264,12 @@ def liveness_step(attempt_id: AttemptIn, data: LivenessStepIn, db: DBSession = D
         center_landmarks = analyzer.detect_face(center, strict=False) if center is not None else None
         center_yaw = analyzer.head_yaw(center, center_landmarks) if center_landmarks is not None else None
         if center_yaw is None:
-            return LivenessStepOut(step_ok=False, message="Your straight-ahead position was lost. Please start again.")
-        delta = yaw - center_yaw
-        step_ok = delta > LIVENESS_YAW_THRESHOLD if data.step == "left" else delta < -LIVENESS_YAW_THRESHOLD
+            return LivenessStepOut(step_ok=False, message="Straight-ahead reference was lost. Please start the liveness check again.")
+        step_ok = _turned(data.step, yaw, center_yaw)
         direction = "left" if data.step == "left" else "right"
-        message = f"Turn your head further to the {direction} and hold it there." if not step_ok else f"{direction.title()} position confirmed."
+        message = (f"{direction.title()} position not detected. Please turn your head further to the {direction}, "
+                   f"hold it there, and do the step again."
+                   if not step_ok else f"{direction.title()} position detected.")
 
     return LivenessStepOut(step_ok=step_ok, message=message)
 
